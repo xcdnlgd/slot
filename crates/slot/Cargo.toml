@@ -7,7 +7,7 @@ license.workspace = true
 
 [features]
 default = ["host"]
-host = ["dep:winit", "dep:cpal", "dep:gilrs", "slot-gfx/host"]
+host = ["dep:winit", "dep:cpal", "dep:sdl3", "slot-gfx/host"]
 device = ["slot-gfx/device"]
 
 [dependencies]
@@ -19,7 +19,7 @@ slot-store = { path = "../slot-store" }
 slot-ui = { path = "../slot-ui" }
 winit = { workspace = true, optional = true }
 cpal = { workspace = true, optional = true }
-gilrs = { workspace = true, optional = true }
+sdl3 = { workspace = true, optional = true }
 libloading = { workspace = true }
 libc = { workspace = true }
 lz4_flex = { workspace = true }

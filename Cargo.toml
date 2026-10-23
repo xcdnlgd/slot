@@ -19,7 +19,7 @@ glutin-winit = "0.5"
 raw-window-handle = "0.6"
 gl = "0.14"
 cpal = "0.15"
-gilrs = "0.11"
+sdl3 = { version = "0.20", default-features = false, features = ["use-pkg-config"] }
 tempfile = "3"
 unicode-normalization = "0.1"
 resvg = { version = "0.48", default-features = false }

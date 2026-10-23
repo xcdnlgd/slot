@@ -29,7 +29,7 @@ fn the_host_keymap_matches_the_documented_layout() {
         (KeyCode::Minus, Btn::VolDown),
         (KeyCode::Backslash, Btn::Power),
     ];
-    let mut h = HostInput::new();
+    let mut h = HostInput::keyboard_only();
     for (code, btn) in map {
         assert_eq!(edge(&mut h, code, true), vec![RawEvent::Down(btn)]);
         assert_eq!(edge(&mut h, code, false), vec![RawEvent::Up(btn)]);
@@ -39,7 +39,7 @@ fn the_host_keymap_matches_the_documented_layout() {
 
 #[test]
 fn key_repeat_does_not_re_press_the_button() {
-    let mut h = HostInput::new();
+    let mut h = HostInput::keyboard_only();
     assert_eq!(
         edge(&mut h, KeyCode::Tab, true),
         vec![RawEvent::Down(Btn::Menu)]
@@ -54,7 +54,7 @@ fn key_repeat_does_not_re_press_the_button() {
 
 #[test]
 fn the_lid_key_toggles_because_the_host_has_no_hinge() {
-    let mut h = HostInput::new();
+    let mut h = HostInput::keyboard_only();
     assert_eq!(
         edge(&mut h, KeyCode::BracketRight, true),
         vec![RawEvent::Down(Btn::Lid)]
@@ -72,7 +72,7 @@ fn the_lid_key_toggles_because_the_host_has_no_hinge() {
 
 #[test]
 fn the_two_reflex_keys_no_longer_end_a_session() {
-    let mut h = HostInput::new();
+    let mut h = HostInput::keyboard_only();
     for reflex in [KeyCode::Escape, KeyCode::KeyL] {
         assert!(
             edge(&mut h, reflex, true).is_empty(),
@@ -83,7 +83,7 @@ fn the_two_reflex_keys_no_longer_end_a_session() {
 
 #[test]
 fn a_window_that_loses_focus_lets_go_of_the_keys_held_in_it() {
-    let mut h = HostInput::new();
+    let mut h = HostInput::keyboard_only();
     assert_eq!(
         edge(&mut h, KeyCode::KeyZ, true),
         vec![RawEvent::Down(Btn::A)]
