@@ -1,4 +1,4 @@
-use slot_gfx::blit_rect;
+use slot_gfx::{blit_panel_rect, blit_rect};
 
 #[test]
 fn a_shake_moves_the_whole_image_sideways() {
@@ -52,4 +52,44 @@ fn the_overlay_drops_by_the_strip_when_it_slides_away() {
     assert_eq!(slot_gfx::lifted_rect((640, 480), 1.0), (0, 0, 640, 427));
     let mid = slot_gfx::lifted_rect((640, 480), 0.5).1;
     assert!(0 < mid && mid < 53);
+}
+
+#[test]
+fn a_panel_on_a_whole_multiple_stays_pixel_exact() {
+    assert_eq!(
+        blit_panel_rect((640, 480), (1280, 960), 0.0),
+        (0, 0, 1280, 960)
+    );
+    assert_eq!(
+        blit_panel_rect((640, 480), (1920, 1440), 0.0),
+        (0, 0, 1920, 1440)
+    );
+}
+
+#[test]
+fn a_resized_window_contains_the_panel_at_its_aspect() {
+    assert_eq!(
+        blit_panel_rect((640, 480), (1600, 1000), 0.0),
+        (133, 0, 1333, 1000)
+    );
+    assert_eq!(
+        blit_panel_rect((640, 480), (1280, 1024), 0.0),
+        (0, 32, 1280, 960)
+    );
+}
+
+#[test]
+fn a_window_that_is_not_a_whole_multiple_letterboxes_the_panel() {
+    assert_eq!(
+        blit_panel_rect((640, 480), (1440, 960), 0.0),
+        (80, 0, 1280, 960)
+    );
+}
+
+#[test]
+fn a_window_smaller_than_the_panel_still_fits_it() {
+    assert_eq!(
+        blit_panel_rect((640, 480), (320, 240), 0.0),
+        (0, 0, 320, 240)
+    );
 }

@@ -53,6 +53,22 @@ pub fn blit_rect_fit(panel: (u32, u32), shake: f32) -> (i32, i32, i32, i32) {
     )
 }
 
+/// A simulated device panel contained in the window at its own aspect ratio.
+/// Whole multiples stay pixel-exact; other sizes scale to fill as much of the
+/// window as the aspect allows.
+pub fn blit_panel_rect(panel: (u32, u32), window: (u32, u32), shake: f32) -> (i32, i32, i32, i32) {
+    let scale = (window.0 as f32 / panel.0 as f32).min(window.1 as f32 / panel.1 as f32);
+    let w = (panel.0 as f32 * scale).round().max(1.0) as i32;
+    let h = (panel.1 as f32 * scale).round().max(1.0) as i32;
+    let dx = (shake * scale * panel.0 as f32 / OUT_W as f32).round() as i32;
+    (
+        (window.0 as i32 - w) / 2 + dx,
+        (window.1 as i32 - h) / 2,
+        w,
+        h,
+    )
+}
+
 pub fn blit_rect(window: (u32, u32), shake: f32) -> (i32, i32, i32, i32) {
     if crate::bezel::framed(window) {
         let (x, y, w, h) = crate::bezel::screen_rect(window);

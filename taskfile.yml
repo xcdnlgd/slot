@@ -1,8 +1,11 @@
 version: '3'
 
 vars:
-  CORE: vendor/mgba_libretro.dylib
-  GPSP_HOST: vendor/gpsp_libretro.dylib
+  HOST_OS:
+    sh: uname -s
+  DLL_EXT: '{{if eq .HOST_OS "Darwin"}}dylib{{else}}so{{end}}'
+  CORE: vendor/mgba_libretro.{{.DLL_EXT}}
+  GPSP_HOST: vendor/gpsp_libretro.{{.DLL_EXT}}
   MGBA_COMMIT: e31759b24e7a4e3899285ff720d7b573ac328ae7
   GPSP_COMMIT: 7b2dd37394e2822110cacef321e9bb291a305b77
   EXFATPROGS_VERSION: 1.4.3
@@ -28,7 +31,7 @@ tasks:
     desc: List available tasks
     silent: true
     cmds:
-      - task --list
+      - '{{.TASK_EXE}} --list'
 
   build:
     desc: Debug build of the whole workspace
@@ -114,7 +117,7 @@ tasks:
       - test "$(cat {{.CORE}}.meta 2>/dev/null)" = "$(sh cores/mgba/build.sh stamp {{.MGBA_COMMIT}})"
     cmds:
       - sh cores/mgba/build.sh build {{.MGBA_COMMIT}} target/mgba {{.CORE}}
-      - file {{.CORE}} | grep -q Mach-O
+      - 'file {{.CORE}} | grep -q {{if eq .HOST_OS "Darwin"}}Mach-O{{else}}ELF{{end}}'
       - 'echo "built {{.CORE}}"'
 
   core:gpsp:host:
@@ -124,17 +127,24 @@ tasks:
     cmds:
       - |
         set -euo pipefail
-        case "$(uname -m)" in
-          arm64)  arch=arm64 ;;
-          x86_64) arch=x86_64 ;;
-          *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
+        case "$(uname -s)-$(uname -m)" in
+          Darwin-arm64)
+            url="https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/gpsp_libretro.dylib.zip" ;;
+          Darwin-x86_64)
+            url="https://buildbot.libretro.com/nightly/apple/osx/x86_64/latest/gpsp_libretro.dylib.zip" ;;
+          Linux-x86_64)
+            url="https://buildbot.libretro.com/nightly/linux/x86_64/latest/gpsp_libretro.so.zip" ;;
+          Linux-aarch64)
+            url="https://buildbot.libretro.com/nightly/linux/aarch64/latest/gpsp_libretro.so.zip" ;;
+          *)
+            echo "unsupported host $(uname -s)-$(uname -m)" >&2
+            exit 1 ;;
         esac
         mkdir -p vendor
-        curl -fsSL -o vendor/gpsp-host.zip \
-          "https://buildbot.libretro.com/nightly/apple/osx/${arch}/latest/gpsp_libretro.dylib.zip"
+        curl -fsSL -o vendor/gpsp-host.zip "$url"
         unzip -o -q vendor/gpsp-host.zip -d vendor
         rm -f vendor/gpsp-host.zip
-        file {{.GPSP_HOST}} | grep -q Mach-O
+        file {{.GPSP_HOST}} | grep -q '{{if eq .HOST_OS "Darwin"}}Mach-O{{else}}ELF{{end}}'
         echo "fetched {{.GPSP_HOST}}"
 
   core:update:
@@ -199,6 +209,7 @@ tasks:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
       SLOT_SILENT: '0'
       SLOT_WINDOW: '1280x960'
+      SLOT_PANEL: '640x480'
     cmds:
       - cargo run --release -p slot
 

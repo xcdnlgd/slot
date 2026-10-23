@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use slot::frontend::Frontend;
 use slot::input::HostInput;
-use slot_gfx::{Compositor, HostSurface, Surface};
+use slot_gfx::{Compositor, HostSurface, Surface, OUT_H, OUT_W};
 use slot_power::SimPlatform;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -10,6 +10,12 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::WindowId;
 
 const FRAME: Duration = Duration::from_micros(16_667);
+
+fn panel_override() -> Option<(u32, u32)> {
+    let raw = std::env::var("SLOT_PANEL").ok()?;
+    let (w, h) = raw.split_once('x')?;
+    Some((w.parse().ok()?, h.parse().ok()?))
+}
 
 struct Slot {
     gfx: Option<(HostSurface, Compositor)>,
@@ -41,9 +47,11 @@ impl ApplicationHandler for Slot {
                 return;
             }
         };
+        let panel = panel_override().unwrap_or((OUT_W, OUT_H));
+        compositor.set_panel(Some(panel));
+        let panel = compositor.panel_size(surface.window_size());
         self.frontend.upload_faces(&mut compositor);
-        self.frontend
-            .upload_bezel(&mut compositor, surface.window_size());
+        self.frontend.upload_bezel(&mut compositor, panel);
         self.gfx = Some((surface, compositor));
     }
 

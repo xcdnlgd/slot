@@ -3,7 +3,7 @@ use crate::grade::blue_light_gain;
 use crate::pipeline::GamePass;
 use crate::quad::Quad;
 use crate::shaders::{BLIT_FRAG, BLIT_VERT, TURN_VERT};
-use crate::surface::{blit_rect, GfxError, Surface, OUT_H, OUT_W};
+use crate::surface::{blit_panel_rect, blit_rect, GfxError, Surface, OUT_H, OUT_W};
 use crate::Canvas;
 
 pub const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
@@ -26,6 +26,7 @@ pub struct Compositor {
     gain: [f32; 3],
     shake: f32,
     window: (u32, u32),
+    panel: Option<(u32, u32)>,
     screen: f32,
     quad: Quad,
     game: GamePass,
@@ -76,6 +77,7 @@ impl Compositor {
                 gain: blue_light_gain(0),
                 shake: 0.0,
                 window: (OUT_W, OUT_H),
+                panel: None,
                 screen: 0.0,
                 quad: Quad::new(),
                 game: GamePass::new()?,
@@ -200,20 +202,32 @@ impl Compositor {
             }],
             &self.quad,
         );
-        self.sprites.set_target(Canvas::of(self.window));
+        self.sprites
+            .set_target(Canvas::of(self.panel_size(self.window)));
     }
 
     pub fn set_paper(&mut self, size: u32, gray: &[u8]) {
         self.game.set_paper(size, gray);
     }
 
+    pub fn set_panel(&mut self, panel: Option<(u32, u32)>) {
+        self.panel = panel;
+        if let Some(panel) = panel {
+            self.resize(panel);
+        }
+    }
+
+    pub fn panel_size(&self, window: (u32, u32)) -> (u32, u32) {
+        self.panel.unwrap_or(window)
+    }
+
     pub fn fit(&mut self, window: (u32, u32)) {
         self.window = window;
-        self.resize(canvas_size(window));
+        self.resize(self.panel.unwrap_or_else(|| canvas_size(window)));
     }
 
     fn native(&self) -> bool {
-        crate::bezel::framed(self.window)
+        crate::bezel::framed(self.panel_size(self.window))
     }
 
     fn resize(&mut self, size: (u32, u32)) {
@@ -335,13 +349,16 @@ impl Compositor {
     }
 
     pub fn begin_frame(&mut self) {
-        let size = if self.native() {
-            self.window
-        } else {
-            canvas_size(self.window)
-        };
+        let panel = self.panel_size(self.window);
+        let size = self.panel.unwrap_or_else(|| {
+            if crate::bezel::framed(self.window) {
+                self.window
+            } else {
+                canvas_size(self.window)
+            }
+        });
         self.resize(size);
-        self.sprites.set_target(Canvas::of(self.window));
+        self.sprites.set_target(Canvas::of(panel));
         self.game.set_fbo_scale(
             self.size.0 as f32 / OUT_W as f32,
             self.size.1 as f32 / OUT_H as f32,
@@ -410,6 +427,11 @@ impl Compositor {
             gl::Uniform3f(self.u_gain, self.gain[0], self.gain[1], self.gain[2]);
             gl::BindTexture(gl::TEXTURE_2D, self.tex);
         }
+        if let Some(panel) = self.panel {
+            let (x, y, w, h) = blit_panel_rect(panel, window, self.shake);
+            self.blit_part(x, y, w, h, [0.0, 0.0, 1.0, 1.0]);
+            return;
+        }
         if self.native() {
             let canvas = Canvas::of(window);
             let dx = (self.shake * window.0 as f32 / canvas.w).round() as i32;
@@ -427,10 +449,9 @@ impl Compositor {
     }
 
     fn panel_bezel(&self) -> Option<Draw> {
-        let tex = self
-            .game_bezel
-            .filter(|_| crate::bezel::framed(self.window))?;
-        let canvas = Canvas::of(self.window);
+        let panel = self.panel_size(self.window);
+        let tex = self.game_bezel.filter(|_| crate::bezel::framed(panel))?;
+        let canvas = Canvas::of(panel);
         Some(Draw::Tex {
             x: 0.0,
             y: 0.0,
@@ -447,7 +468,8 @@ impl Compositor {
         if !self.native() {
             return draw(self);
         }
-        let (x, top, w, h) = crate::bezel::game_rect(self.window, self.sp_frame);
+        let panel = self.panel_size(self.window);
+        let (x, top, w, h) = crate::bezel::game_rect(panel, self.sp_frame);
         self.game
             .set_fbo_scale(w as f32 / OUT_W as f32, h as f32 / OUT_H as f32);
         let y = self.size.1 as i32 - top - h;
