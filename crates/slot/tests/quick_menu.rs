@@ -409,6 +409,62 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
 }
 
 #[test]
+fn an_external_shader_joins_the_gba_shader_wrap() {
+    let (d, mut a, _) = on_carousel();
+    std::fs::create_dir_all(d.path().join("Shaders/GBA")).unwrap();
+    std::fs::write(d.path().join("Shaders/GBA/foo.glslp"), "").unwrap();
+    open_at(&mut a, QuickRow::GbaShader);
+    press(&mut a, Btn::Right);
+    press(&mut a, Btn::Right);
+    assert_eq!(
+        a.quick_value(QuickRow::GbaShader),
+        Some(QuickValue::External)
+    );
+    let state = read_slot_state(d.path());
+    assert_eq!(state.shader_gba, Shader::External);
+    assert_eq!(state.shader_external_gba.as_deref(), Some("GBA/foo.glslp"));
+    assert_eq!(
+        a.external_shader_path(),
+        Some(d.path().join("Shaders/GBA/foo.glslp"))
+    );
+}
+
+#[test]
+fn an_external_shader_shows_its_name_and_the_wrap_moves_between_names() {
+    let (d, mut a, _) = on_carousel();
+    std::fs::create_dir_all(d.path().join("Shaders/GBA")).unwrap();
+    for name in ["bar", "foo"] {
+        std::fs::write(d.path().join(format!("Shaders/GBA/{name}.glslp")), "").unwrap();
+    }
+    open_at(&mut a, QuickRow::GbaShader);
+    fake_faces(&mut a);
+    for _ in 0..8 {
+        if a.quick_value(QuickRow::GbaShader) == Some(QuickValue::External) {
+            break;
+        }
+        press(&mut a, Btn::Right);
+    }
+    assert_eq!(
+        a.quick_value(QuickRow::GbaShader),
+        Some(QuickValue::External)
+    );
+    let drew = |a: &App, tex: usize| {
+        frame(a)
+            .iter()
+            .any(|d| matches!(*d, Draw::Tex { tex: found, .. } if found == TexId::from_raw(tex)))
+    };
+    assert!(drew(&a, 2201), "the selected shader's name was not drawn");
+    assert!(drew(&a, 2300), "the selected shader's toast was not drawn");
+    press(&mut a, Btn::Right);
+    assert_eq!(
+        read_slot_state(d.path()).shader_external_gba.as_deref(),
+        Some("GBA/foo.glslp")
+    );
+    assert!(drew(&a, 2203), "the next shader's name was not drawn");
+    assert!(drew(&a, 2301), "the next shader's toast was not drawn");
+}
+
+#[test]
 fn each_platform_keeps_its_own_shader_wraps_and_starts_on_grid_and_simpletex() {
     let (d, mut a, _) = on_carousel();
     open_at(&mut a, QuickRow::GbaShader);
@@ -654,6 +710,20 @@ fn fake_faces(a: &mut App) {
         values: (0..QuickValue::ALL.len())
             .map(|i| [(id(2000 + i), 60, 40), (id(2100 + i), 60, 40)])
             .collect(),
+        external_values: vec![
+            (
+                "GBA/bar.glslp".to_string(),
+                [(id(2200), 60, 40), (id(2201), 60, 40)],
+            ),
+            (
+                "GBA/foo.glslp".to_string(),
+                [(id(2202), 60, 40), (id(2203), 60, 40)],
+            ),
+        ],
+        external_toasts: vec![
+            ("GBA/bar.glslp".to_string(), (id(2300), 100, 24)),
+            ("GBA/foo.glslp".to_string(), (id(2301), 100, 24)),
+        ],
         carets: [(id(300), 10, 40), (id(301), 10, 40)],
         legend: [
             (id(400), 70),
@@ -1049,6 +1119,8 @@ fn no_row_in_hand_runs_its_arrows_into_its_label() {
                 [(id(2000 + i), w, 40), (id(2100 + i), w, 40)]
             })
             .collect(),
+        external_values: Vec::new(),
+        external_toasts: Vec::new(),
         carets: [false, true].map(|right| {
             let f = slot_ui::quick_caret_face(right);
             (id(300 + right as usize), f.w, f.h)

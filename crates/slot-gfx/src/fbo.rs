@@ -1,4 +1,5 @@
 use crate::draw::{Draw, Sprites, TexId};
+use crate::external::{ExternalProgram, ShaderSource};
 use crate::grade::blue_light_gain;
 use crate::pipeline::GamePass;
 use crate::quad::Quad;
@@ -35,6 +36,9 @@ pub struct Compositor {
     sp_frame: bool,
     turn: Option<Turn>,
     captured: Option<(u32, u32, Vec<u8>)>,
+    external: Option<ExternalProgram>,
+    external_linear: bool,
+    frame_count: u64,
 }
 
 impl Compositor {
@@ -86,6 +90,9 @@ impl Compositor {
                 sp_frame: true,
                 turn: None,
                 captured: None,
+                external: None,
+                external_linear: false,
+                frame_count: 0,
             })
         }
     }
@@ -125,12 +132,19 @@ impl Compositor {
             match *item {
                 Draw::Game => {
                     self.sprites.draw(&items[from..i], &self.quad);
-                    self.in_game_rect(|c| {
-                        c.game.draw(&c.quad);
-                        if c.panel_bezel().is_none() {
-                            c.draw_game_bezel();
+                    if self.external.is_some() {
+                        self.draw_external();
+                        if self.panel_bezel().is_none() {
+                            self.draw_game_bezel();
                         }
-                    });
+                    } else {
+                        self.in_game_rect(|c| {
+                            c.game.draw(&c.quad);
+                            if c.panel_bezel().is_none() {
+                                c.draw_game_bezel();
+                            }
+                        });
+                    }
                     if let Some(bezel) = self.panel_bezel() {
                         self.sprites.draw(&[bezel], &self.quad);
                     }
@@ -171,6 +185,15 @@ impl Compositor {
 
     pub fn set_screen_effect(&mut self, effect: crate::ScreenEffect) {
         self.game.set_effect(effect);
+    }
+
+    pub fn set_external_source(&mut self, source: Option<ShaderSource>) -> Result<(), GfxError> {
+        self.external = match &source {
+            Some(source) => Some(ExternalProgram::new(source)?),
+            None => None,
+        };
+        self.external_linear = source.is_some_and(|s| s.linear);
+        Ok(())
     }
 
     pub fn set_picture(&mut self, rect: [f32; 4]) {
@@ -349,6 +372,7 @@ impl Compositor {
     }
 
     pub fn begin_frame(&mut self) {
+        self.frame_count = self.frame_count.wrapping_add(1);
         let panel = self.panel_size(self.window);
         let size = self.panel.unwrap_or_else(|| {
             if crate::bezel::framed(self.window) {
@@ -464,6 +488,35 @@ impl Compositor {
 }
 
 impl Compositor {
+    fn draw_external(&mut self) {
+        let panel = self.panel_size(self.window);
+        let (x, top, w, h) = if self.native() {
+            let (x, y, w, h) = crate::bezel::game_rect(panel, self.sp_frame);
+            (x as f32, y as f32, w as f32, h as f32)
+        } else {
+            self.game.frame()
+        };
+        let w = w.round().max(1.0) as i32;
+        let h = h.round().max(1.0) as i32;
+        let x = x.round() as i32;
+        let y = (self.size.1 as f32 - top - h as f32).round() as i32;
+        self.game.set_linear(self.external_linear);
+        let bright = self.game.brightness();
+        let texture = self.game.texture();
+        if let Some(program) = &self.external {
+            unsafe { gl::Viewport(x, y, w, h) };
+            program.draw(
+                texture,
+                (crate::pipeline::SRC_W, crate::pipeline::SRC_H),
+                (w as u32, h as u32),
+                self.frame_count,
+                bright,
+            );
+        }
+        self.game.set_linear(false);
+        unsafe { gl::Viewport(0, 0, self.size.0 as i32, self.size.1 as i32) };
+    }
+
     fn in_game_rect(&mut self, draw: impl FnOnce(&mut Self)) {
         if !self.native() {
             return draw(self);

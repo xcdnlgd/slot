@@ -547,6 +547,8 @@ fn menu_faces(a: &mut App) {
             .collect(),
         pointer: (id(700), 16, 40),
         values: Vec::new(),
+        external_values: Vec::new(),
+        external_toasts: Vec::new(),
         carets: [(id(300), 10, 40), (id(301), 10, 40)],
         legend: [
             (id(400), 70),

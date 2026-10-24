@@ -213,6 +213,9 @@ pub struct SlotState {
     pub shader_gba: Shader,
     pub shader_gb: Shader,
     pub shader_gbc: Shader,
+    pub shader_external_gba: Option<String>,
+    pub shader_external_gb: Option<String>,
+    pub shader_external_gbc: Option<String>,
     pub auto_load: bool,
     pub eject_save: bool,
     pub turbo: bool,
@@ -293,6 +296,7 @@ pub enum Shader {
     Grid,
     Dot,
     Simpletex,
+    External,
 }
 
 impl Shader {
@@ -306,6 +310,7 @@ impl Shader {
             Shader::Grid => "grid",
             Shader::Dot => "dot",
             Shader::Simpletex => "simpletex",
+            Shader::External => "external",
         }
     }
 
@@ -316,6 +321,7 @@ impl Shader {
             Shader::Grid,
             Shader::Dot,
             Shader::Simpletex,
+            Shader::External,
         ]
         .into_iter()
         .find(|s| s.name() == name)
@@ -354,6 +360,9 @@ impl Default for SlotState {
             shader_gba: Shader::Grid,
             shader_gb: Shader::Simpletex,
             shader_gbc: Shader::Simpletex,
+            shader_external_gba: None,
+            shader_external_gb: None,
+            shader_external_gbc: None,
             auto_load: true,
             eject_save: true,
             turbo: true,
@@ -457,6 +466,12 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.colour_correction_gbc as u8
     ));
     text.push_str(&format!("shader_gbc={}\n", s.shader_gbc.name()));
+    text.push_str(&format!(
+        "shader_external_gba={}\nshader_external_gb={}\nshader_external_gbc={}\n",
+        s.shader_external_gba.as_deref().unwrap_or(""),
+        s.shader_external_gb.as_deref().unwrap_or(""),
+        s.shader_external_gbc.as_deref().unwrap_or("")
+    ));
     text.push_str(&format!("wallpaper_tint={}\n", s.wallpaper_tint.key()));
     text.push_str(&format!("show_recents={}\n", s.show_recents as u8));
     text.push_str(&format!("show_titles={}\n", s.show_titles as u8));
@@ -503,6 +518,9 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut shader_gba = None;
     let mut shader_gb = None;
     let mut shader_gbc = None;
+    let mut shader_external_gba = None;
+    let mut shader_external_gb = None;
+    let mut shader_external_gbc = None;
     let mut auto_load = None;
     let mut eject_save = None;
     let mut turbo = None;
@@ -543,7 +561,10 @@ fn parse(text: &str) -> Option<SlotState> {
             "colour_correction_gba" => colour_correction_gba = flag(value),
             "colour_correction_gb" => colour_correction_gb = flag(value),
             "colour_correction_gbc" => colour_correction_gbc = flag(value),
-            "shader_gba" => shader_gba = Shader::parse(value).filter(|s| Shader::GBA.contains(s)),
+            "shader_gba" => {
+                shader_gba = Shader::parse(value)
+                    .filter(|s| *s == Shader::External || Shader::GBA.contains(s))
+            }
             "auto_load" => auto_load = flag(value),
             "eject_save" => eject_save = flag(value),
             "turbo" => turbo = flag(value),
@@ -562,8 +583,23 @@ fn parse(text: &str) -> Option<SlotState> {
             "bezel_gbc" => bezel_gbc = Some(BezelPick::parse(value)),
             "shelf" => shelf = Some(value.to_string()).filter(|v| !v.is_empty()),
             "shelf_cart" => shelf_cart = recent_value(value),
-            "shader_gb" => shader_gb = Shader::parse(value).filter(|s| Shader::GB.contains(s)),
-            "shader_gbc" => shader_gbc = Shader::parse(value).filter(|s| Shader::GB.contains(s)),
+            "shader_gb" => {
+                shader_gb = Shader::parse(value)
+                    .filter(|s| *s == Shader::External || Shader::GB.contains(s))
+            }
+            "shader_gbc" => {
+                shader_gbc = Shader::parse(value)
+                    .filter(|s| *s == Shader::External || Shader::GB.contains(s))
+            }
+            "shader_external_gba" => {
+                shader_external_gba = Some(value.to_string()).filter(|v| !v.is_empty())
+            }
+            "shader_external_gb" => {
+                shader_external_gb = Some(value.to_string()).filter(|v| !v.is_empty())
+            }
+            "shader_external_gbc" => {
+                shader_external_gbc = Some(value.to_string()).filter(|v| !v.is_empty())
+            }
             _ => {}
         }
     }
@@ -596,6 +632,9 @@ fn parse(text: &str) -> Option<SlotState> {
         shader_gba: shader_gba.unwrap_or(fallback.shader_gba),
         shader_gb: shader_gb.unwrap_or(fallback.shader_gb),
         shader_gbc: shader_gbc.or(shader_gb).unwrap_or(fallback.shader_gbc),
+        shader_external_gba,
+        shader_external_gb,
+        shader_external_gbc,
         auto_load: auto_load.unwrap_or(fallback.auto_load),
         eject_save: eject_save.unwrap_or(fallback.eject_save),
         turbo: turbo.unwrap_or(fallback.turbo),

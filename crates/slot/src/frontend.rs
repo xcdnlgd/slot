@@ -1,6 +1,7 @@
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use slot_gfx::{Compositor, Draw, ScreenEffect, TexId, OUT_H, OUT_W};
+use slot_gfx::{Canvas, Compositor, Draw, ScreenEffect, TexId, OUT_H, OUT_W};
 
 const PAPER: &[u8] = include_bytes!("../assets/paper.png");
 use slot_input::{InputSource, Millis};
@@ -11,9 +12,10 @@ use slot_ui::{
     badge_face, bezel_face, cart_shadow, chip_face, chip_shadow_face, core_button_legends,
     date_time_text, default_game_bezel_face, delete_legends, footer_ink, game_bezel_face,
     gb_cart_shadow, hhmm, hint_face, icon_face, link_button_legends, menu_detail_face, menu_face,
-    photo_face, prompt_legends, quick_caret_face, quick_description_face, quick_label_face,
-    quick_legend_faces, quick_pointer_face, quick_value_face, quick_warning_value_face,
-    rebuild_count_face, rebuild_title_face, repair_legends, set_clock_hint_face, slot_back,
+    photo_face, prompt_legends, quick_caret_face, quick_description_face, quick_external_value_face,
+    quick_label_face, quick_legend_faces, quick_pointer_face, quick_value_face,
+    quick_warning_value_face, rebuild_count_face, rebuild_title_face, repair_legends,
+    set_clock_hint_face, shader_toast_face, slot_back,
     slot_back_light, slot_front, slot_front_light, socket_face, sticker_face, title_face,
     toast_face, wallpaper_face, word_ink, CartFace, GbShell, Icon, LinkBadge, PowerChoice,
     QuickMenuFaces, QuickRow, QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX,
@@ -64,6 +66,8 @@ pub struct Frontend {
     link_shot: Option<TexId>,
     link_shot_size: (u32, u32),
     link_shot_shown: bool,
+    external_path: Option<PathBuf>,
+    panel: (u32, u32),
 }
 
 #[derive(Default)]
@@ -202,6 +206,8 @@ impl Frontend {
             link_shot: None,
             link_shot_size: (0, 0),
             link_shot_shown: false,
+            external_path: None,
+            panel: (OUT_W, OUT_H),
         }
     }
 
@@ -221,6 +227,10 @@ impl Frontend {
         compositor.set_paper(info.width, &buf[..info.buffer_size()]);
     }
 
+    pub fn set_panel(&mut self, panel: (u32, u32)) {
+        self.panel = panel;
+    }
+
     pub fn upload_faces(&mut self, compositor: &mut Compositor) {
         self.upload_boot_faces(compositor);
         if let Some(faces) = self.ui_faces.take().and_then(|rx| rx.recv().ok()) {
@@ -235,15 +245,18 @@ impl Frontend {
             self.cart_faces.sync(self.session.app_mut(), compositor);
         }
         crate::boot_time::mark("cart faces");
+        let root = self.session.app().root().map(Path::to_path_buf);
+        let spawn_root = root.clone();
+        let toast_w = shader_toast_width(self.panel);
         let (tx, rx) = std::sync::mpsc::channel();
         let spawned = std::thread::Builder::new()
             .name("slot-ui-faces".into())
             .spawn(move || {
-                let _ = tx.send(UiFaces::build());
+                let _ = tx.send(UiFaces::build(spawn_root, toast_w));
             });
         match spawned {
             Ok(_) => self.ui_faces = Some(rx),
-            Err(_) => self.place_ui_faces(compositor, UiFaces::build()),
+            Err(_) => self.place_ui_faces(compositor, UiFaces::build(root, toast_w)),
         }
         let icons = Icon::ALL
             .iter()
@@ -405,6 +418,14 @@ impl Frontend {
         let mut cart = |f: CartFace| compositor.create_texture(f.w, f.h, &f.rgba);
         let link_badges = faces.link_badges.into_iter().map(&mut cart).collect();
         let toasts = faces.toasts.into_iter().map(&mut cart).collect();
+        let external_toasts = faces
+            .external_toasts
+            .into_iter()
+            .map(|(key, face)| {
+                let (w, h) = (face.w, face.h);
+                (key, (cart(face), w, h))
+            })
+            .collect();
         let sockets = faces.sockets.into_iter().map(&mut cart).collect();
         let chips = faces.chips.into_iter().map(&mut cart).collect();
         let blank = cart(faces.blank_chip);
@@ -425,6 +446,11 @@ impl Frontend {
             .quick_values
             .into_iter()
             .map(|v| v.map(&mut up))
+            .collect();
+        let external_values = faces
+            .quick_external
+            .into_iter()
+            .map(|(key, pair)| (key, pair.map(&mut up)))
             .collect();
         let carets = faces.quick_carets.map(&mut up);
         let descriptions = faces.descriptions.map(&mut up);
@@ -474,6 +500,8 @@ impl Frontend {
             labels,
             pointer,
             values,
+            external_values,
+            external_toasts,
             carets,
             legend,
             legend_light,
@@ -490,6 +518,7 @@ impl Frontend {
     }
 
     pub fn upload_bezel(&mut self, compositor: &mut Compositor, panel: (u32, u32)) {
+        self.panel = panel;
         self.session.app_mut().set_panel(panel);
         if !slot_gfx::framed(panel) {
             return;
@@ -557,12 +586,36 @@ impl Frontend {
     pub fn compose(&mut self, compositor: &mut Compositor) {
         compositor.set_blue_light(self.session.app().blue_light());
         compositor.set_picture(self.session.app().picture_rect());
+        let external = self.session.app().external_shader_path();
+        if external != self.external_path {
+            self.external_path = external.clone();
+            let loaded = match external.as_deref() {
+                Some(path) => match slot_gfx::load_shader(path) {
+                    Ok(source) => Some(source),
+                    Err(e) => {
+                        eprintln!("slot: shader {}: {e}", path.display());
+                        None
+                    }
+                },
+                None => None,
+            };
+            let has_shader = loaded.is_some();
+            if let Err(e) = compositor.set_external_source(loaded) {
+                eprintln!("slot: shader: {e}");
+                let _ = compositor.set_external_source(None);
+            } else if has_shader {
+                if let Some(path) = external.as_deref() {
+                    eprintln!("slot: shader {}", path.display());
+                }
+            }
+        }
         compositor.set_screen_effect(match self.session.app().screen_shader() {
             slot_store::Shader::Off => ScreenEffect::None,
             slot_store::Shader::Lcd3x => ScreenEffect::Lcd3x,
             slot_store::Shader::Grid => ScreenEffect::Grid,
             slot_store::Shader::Dot => ScreenEffect::Dot,
             slot_store::Shader::Simpletex => ScreenEffect::Simpletex,
+            slot_store::Shader::External => ScreenEffect::None,
         });
         compositor.set_shake(self.session.app().screen_shake());
         compositor.set_screen_power(self.session.app().screen_power());
@@ -838,6 +891,8 @@ struct UiFaces {
     quick_labels: Vec<[UndoFace; 2]>,
     quick_pointer: UndoFace,
     quick_values: Vec<[UndoFace; 2]>,
+    quick_external: Vec<(String, [UndoFace; 2])>,
+    external_toasts: Vec<(String, CartFace)>,
     quick_carets: [UndoFace; 2],
     quick_legend: [UndoFace; 8],
     quick_legend_light: [UndoFace; 8],
@@ -860,8 +915,35 @@ struct UiFaces {
     delete_shot: Vec<UndoFace>,
 }
 
+fn shader_toast_width(panel: (u32, u32)) -> u32 {
+    (Canvas::of(panel).w as u32).saturating_sub(64).max(240)
+}
+
+fn external_shader_faces(
+    root: Option<&Path>,
+    toast_w: u32,
+) -> (Vec<(String, [UndoFace; 2])>, Vec<(String, CartFace)>) {
+    let Some(root) = root else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut values: Vec<(String, [UndoFace; 2])> = Vec::new();
+    let mut toasts: Vec<(String, CartFace)> = Vec::new();
+    for platform in [Console::Gba, Console::Gb, Console::Gbc] {
+        for shader in slot_store::external_shaders(root, platform) {
+            if values.iter().any(|(key, _)| key == &shader.key) {
+                continue;
+            }
+            let pair = [false, true].map(|lit| quick_external_value_face(&shader.name, lit));
+            values.push((shader.key.clone(), pair));
+            toasts.push((shader.key, shader_toast_face(&shader.name, toast_w)));
+        }
+    }
+    (values, toasts)
+}
+
 impl UiFaces {
-    fn build() -> Self {
+    fn build(root: Option<PathBuf>, toast_w: u32) -> Self {
+        let (quick_external, external_toasts) = external_shader_faces(root.as_deref(), toast_w);
         UiFaces {
             link_badges: LinkBadge::FACES
                 .iter()
@@ -892,6 +974,8 @@ impl UiFaces {
                 .iter()
                 .map(|v| [false, true].map(|lit| quick_value_face(v.text(), lit)))
                 .collect(),
+            quick_external,
+            external_toasts,
             quick_carets: [false, true].map(quick_caret_face),
             quick_legend: quick_legend_faces(footer_ink(false)),
             quick_legend_light: quick_legend_faces(footer_ink(true)),
@@ -1469,5 +1553,16 @@ fn upload_rgba(
             *slot = Some(id);
             id
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shader_toast_width;
+
+    #[test]
+    fn the_shader_toast_follows_each_device_panel() {
+        assert_eq!(shader_toast_width((640, 480)), 576);
+        assert_eq!(shader_toast_width((720, 480)), 656);
     }
 }

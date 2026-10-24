@@ -3,6 +3,8 @@ version: '3'
 vars:
   HOST_OS:
     sh: uname -s
+  HOST_ARCH:
+    sh: uname -m
   DLL_EXT: '{{if eq .HOST_OS "Darwin"}}dylib{{else}}so{{end}}'
   CORE: vendor/mgba_libretro.{{.DLL_EXT}}
   GPSP_HOST: vendor/gpsp_libretro.{{.DLL_EXT}}
@@ -114,6 +116,7 @@ tasks:
     desc: Build mgba_libretro for this host from the pinned libretro/mgba commit and cores/mgba's patches
     status:
       - test -f {{.CORE}}
+      - 'file {{.CORE}} | grep -q "{{if eq .HOST_OS "Darwin"}}Mach-O{{else}}{{if eq .HOST_ARCH "x86_64"}}x86-64{{else}}aarch64{{end}}{{end}}"'
       - test "$(cat {{.CORE}}.meta 2>/dev/null)" = "$(sh cores/mgba/build.sh stamp {{.MGBA_COMMIT}})"
     cmds:
       - sh cores/mgba/build.sh build {{.MGBA_COMMIT}} target/mgba {{.CORE}}
@@ -124,6 +127,7 @@ tasks:
     desc: Fetch the host gpSP core from the libretro buildbot
     status:
       - test -f {{.GPSP_HOST}}
+      - 'file {{.GPSP_HOST}} | grep -q "{{if eq .HOST_OS "Darwin"}}Mach-O{{else}}{{if eq .HOST_ARCH "x86_64"}}x86-64{{else}}aarch64{{end}}{{end}}"'
     cmds:
       - |
         set -euo pipefail
@@ -177,7 +181,8 @@ tasks:
       ROOT: '{{.ROOT | default "./sdcard"}}'
     cmds:
       - ./target/debug/slot --init-root {{.ROOT}}
-      - 'echo "content root ready at {{.ROOT}}: roms in Games/GBA, Games/GB or Games/GBC, labels in the matching Labels/GBA, Labels/GB or Labels/GBC, battery saves in the matching Saves/GBA, Saves/GB or Saves/GBC, save states under the matching States/GBA, States/GB or States/GBC, gba_bios.bin in BIOS, pngs in Wallpapers, palette in Config/theme.txt"'
+      - cp -R card/Shaders/* {{.ROOT}}/Shaders/
+      - 'echo "content root ready at {{.ROOT}}: roms in Games/GBA, Games/GB or Games/GBC, labels in the matching Labels/GBA, Labels/GB or Labels/GBC, battery saves in the matching Saves/GBA, Saves/GB or Saves/GBC, save states under the matching States/GBA, States/GB or States/GBC, gba_bios.bin in BIOS, pngs in Wallpapers, palette in Config/theme.txt, external shaders in Shaders/Common, Shaders/GBA, Shaders/GB or Shaders/GBC"'
       - 'echo "nothing is moved for you: a file loose at the top of Games/, Saves/, Labels/ or States/ is left where it is and never reaches the shelf"'
 
   run:
@@ -208,7 +213,8 @@ tasks:
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
       SLOT_SILENT: '0'
-      SLOT_WINDOW: '1280x960'
+      # SLOT_WINDOW: '1280x960'
+      SLOT_WINDOW: '640x480'
       SLOT_PANEL: '640x480'
     cmds:
       - cargo run --release -p slot
@@ -230,6 +236,7 @@ tasks:
     cmds:
       - rm -rf {{.OUT}}
       - ./target/release/slot --init-root {{.OUT}}
+      - cp -R card/Shaders/* {{.OUT}}/Shaders/
       - cp target/release/slot {{.OUT}}/System/slot
       - cp {{.CORE}} {{.GPSP_HOST}} {{.OUT}}/System/
       - 'echo "dist ready at {{.OUT}}, copy its contents to SD2"'
@@ -238,6 +245,7 @@ tasks:
     desc: Build the aarch64 linux mgba core for the device bundle, in the box the device build uses
     status:
       - test -f vendor/mgba_libretro.so
+      - file vendor/mgba_libretro.so | grep -q aarch64
       - test "$(cat vendor/mgba_libretro.so.meta 2>/dev/null)" = "$(sh cores/mgba/build.sh stamp {{.MGBA_COMMIT}})"
     cmds:
       - task: device:sh
@@ -252,6 +260,7 @@ tasks:
       as its GPL-2.0 section 3(a) corresponding source
     status:
       - test -f vendor/gpsp_libretro.so
+      - file vendor/gpsp_libretro.so | grep -q aarch64
       - test -f vendor/gpsp-src.tar.gz
       - test "$(cat vendor/gpsp-src.sha 2>/dev/null)" = "{{.GPSP_COMMIT}}"
       - test "$(cat vendor/gpsp_libretro.so.meta 2>/dev/null)" = "$(sh cores/gpsp/build.sh stamp {{.GPSP_COMMIT}})"
@@ -323,10 +332,19 @@ tasks:
     cmds:
       - |
         set -eu
+        proxy="${HTTPS_PROXY:-${HTTP_PROXY:-http://127.0.0.1:7890}}"
+        no_proxy="${NO_PROXY:-localhost,127.0.0.1}"
         if [ "$(uname -s)-$(uname -m)" = "Linux-aarch64" ]; then
           sh -c '{{.CMD}}'
         else
-          docker run --rm --platform linux/arm64 -v "$PWD":/src -w /src rust:1-bullseye sh -c '{{.CMD}}'
+          docker run --rm --platform linux/arm64 --network host \
+            -e HTTP_PROXY="$proxy" -e HTTPS_PROXY="$proxy" \
+            -e ALL_PROXY="$proxy" -e NO_PROXY="$no_proxy" \
+            -e http_proxy="$proxy" -e https_proxy="$proxy" \
+            -e all_proxy="$proxy" -e no_proxy="$no_proxy" \
+            -v slot-cargo-registry:/usr/local/cargo/registry \
+            -v slot-cargo-git:/usr/local/cargo/git \
+            -v "$PWD":/src -w /src rust:1-bullseye sh -c '{{.CMD}}'
         fi
 
   build:device:
@@ -335,8 +353,11 @@ tasks:
       - task: device:sh
         vars:
           CMD: >-
-            cargo build --profile device --target-dir target-device
-            -p slot --no-default-features --features device
+            here="$PWD"; toolchain="$(cd /tmp && rustup toolchain list | grep default | cut -d" " -f1)";
+            cd "$here";
+            RUSTUP_TOOLCHAIN="$toolchain" cargo build --profile device
+            --target-dir target-device -p slot
+            --no-default-features --features device
       - file target-device/device/slot | grep -q aarch64
       - 'echo "built target-device/device/slot"'
 
@@ -346,8 +367,10 @@ tasks:
       - task: device:sh
         vars:
           CMD: >-
-            cargo build --profile device --target-dir target-device
-            -p slot-retro --example core_bench
+            here="$PWD"; toolchain="$(cd /tmp && rustup toolchain list | grep default | cut -d" " -f1)";
+            cd "$here";
+            RUSTUP_TOOLCHAIN="$toolchain" cargo build --profile device
+            --target-dir target-device -p slot-retro --example core_bench
       - file target-device/device/examples/core_bench | grep -q aarch64
       - 'echo "built target-device/device/examples/core_bench, adb push it to /tmp/core_bench"'
 
@@ -358,11 +381,19 @@ tasks:
       OUT: '{{.OUT | default "dist-device"}}'
     cmds:
       - rm -rf {{.OUT}}
-      - task: device:sh
-        vars:
-          CMD: ./target-device/device/slot --init-root {{.OUT}}
+      - |
+        set -eu
+        if [ "$(uname -s)-$(uname -m)" = "Linux-aarch64" ]; then
+          ./target-device/device/slot --init-root {{.OUT}}
+        else
+          docker run --rm --platform linux/arm64 \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD":/src -w /src \
+            rust:1-bullseye ./target-device/device/slot --init-root {{.OUT}}
+        fi
       - cp target-device/device/slot {{.OUT}}/System/slot
       - cp -R card/System/* {{.OUT}}/System/
+      - cp -R card/Shaders/* {{.OUT}}/Shaders/
       - for d in Bezels Labels Wallpapers; do cp card/$d/README.txt {{.OUT}}/$d/; done
       - file vendor/mgba_libretro.so | grep -q aarch64
       - file vendor/gpsp_libretro.so | grep -q aarch64

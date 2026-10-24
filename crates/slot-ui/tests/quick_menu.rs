@@ -1,7 +1,7 @@
 use slot_store::{parse_stamp, FF_SPEEDS};
 use slot_ui::{
-    date_time_text, quick_caret_face, quick_label_face, quick_value_face, ClockPicker, QuickRow,
-    QuickValue, UndoFace, MENU_PAD,
+    date_time_text, quick_caret_face, quick_external_value_face, quick_label_face,
+    quick_value_face, ClockPicker, QuickRow, QuickValue, UndoFace, MENU_PAD,
 };
 
 fn inked(f: &UndoFace, x: u32, y: u32) -> bool {
@@ -40,6 +40,16 @@ fn the_type_sits_exactly_menu_pad_in_from_both_sides_of_its_face() {
             f.w
         );
     }
+}
+
+#[test]
+fn an_external_shader_name_is_capped_with_an_ellipsis() {
+    let long = "a-very-long-external-shader-name-that-does-not-fit".repeat(3);
+    let face = quick_external_value_face(&long, true);
+    assert!(face.w <= 360, "the external value face is {} px", face.w);
+    let (first, last) = ink_columns(&face);
+    assert!((MENU_PAD..MENU_PAD + 4).contains(&first));
+    assert!((face.w - 1 - MENU_PAD - 4..=face.w - 1 - MENU_PAD).contains(&last));
 }
 
 #[test]
@@ -214,6 +224,7 @@ fn the_values_read_as_the_menu_prints_them() {
             "Grid",
             "Dot",
             "Simpletex",
+            "External",
             "Dark",
             "Light",
             "Show",

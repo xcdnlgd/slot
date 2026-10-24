@@ -150,6 +150,7 @@ pub struct Hud {
     headphones: bool,
     ff: FfState,
     said: Option<(Toast, Millis)>,
+    named_toast: Option<(TexId, u32, u32)>,
     alarm: Option<Millis>,
     alarm_toast: Option<Toast>,
     icons: Vec<TexId>,
@@ -173,10 +174,19 @@ impl Hud {
 
     pub fn toast(&mut self, toast: Toast, now: Millis) {
         self.said = Some((toast, now));
+        self.named_toast = None;
+    }
+
+    /// Show a one-off banner whose wording is only known at runtime, such as
+    /// the selected external shader's name.
+    pub fn toast_named(&mut self, toast: Toast, tex: TexId, w: u32, h: u32, now: Millis) {
+        self.said = Some((toast, now));
+        self.named_toast = Some((tex, w, h));
     }
 
     pub fn hush(&mut self) {
         self.said = None;
+        self.named_toast = None;
     }
 
     pub fn set_alarm(&mut self, on: bool, now: Millis) {
@@ -358,17 +368,22 @@ impl Hud {
         if alpha <= 0.0 {
             return;
         }
-        let Some(tex) = self
-            .said
-            .and_then(|(t, _)| self.toasts.get(t.index()))
-            .copied()
-        else {
-            return;
-        };
         let Some((said, _)) = self.said else {
             return;
         };
-        let (x, y, w, h) = toast_rect(canvas, said);
+        let (tex, x, y, w, h) = match self.named_toast {
+            Some((tex, w, h)) => {
+                let (w, h) = (w as f32, h as f32);
+                (tex, canvas.centred(w), PLATE_H / 2.0 - h / 2.0, w, h)
+            }
+            None => {
+                let Some(tex) = self.toasts.get(said.index()).copied() else {
+                    return;
+                };
+                let (x, y, w, h) = toast_rect(canvas, said);
+                (tex, x, y, w as f32, h as f32)
+            }
+        };
         out.push(Draw::Tex {
             x,
             y,

@@ -260,3 +260,25 @@ fn hushing_drops_the_toast_but_keeps_the_alarm() {
     assert_eq!(h.said(20), None);
     assert!(h.alarmed());
 }
+
+#[test]
+fn a_named_toast_draws_the_runtime_face() {
+    let mut h = Hud::new();
+    h.set_toasts(vec![TexId::from_raw(1)]);
+    h.toast_named(slot_ui::Toast::ShaderExternal, TexId::from_raw(2), 100, 24, 0);
+    let mut out = Vec::new();
+    h.draw(Canvas::FRAMED, 0, &mut out);
+    let drawn = out
+        .iter()
+        .find_map(|d| match *d {
+            Draw::Tex { w, h, tex, .. } if tex == TexId::from_raw(2) => Some((w, h)),
+            _ => None,
+        })
+        .expect("the runtime toast face was not drawn");
+    assert_eq!(drawn, (100.0, 24.0));
+    assert!(
+        !out.iter()
+            .any(|d| matches!(d, Draw::Tex { tex, .. } if *tex == TexId::from_raw(1))),
+        "the generic external toast was drawn instead"
+    );
+}

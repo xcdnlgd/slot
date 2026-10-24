@@ -152,6 +152,27 @@ impl GamePass {
         self.src = rect;
     }
 
+    pub fn texture(&self) -> gl::types::GLuint {
+        self.game
+    }
+
+    pub fn brightness(&self) -> f32 {
+        if self.fills {
+            1.0
+        } else {
+            screen_brightness(self.power)
+        }
+    }
+
+    pub fn set_linear(&self, linear: bool) {
+        let filter = if linear { gl::LINEAR } else { gl::NEAREST };
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.game);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, filter as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, filter as i32);
+        }
+    }
+
     pub fn upload(&mut self, xrgb8888: &[u8]) {
         if xrgb8888.len() < (SRC_W * SRC_H * 4) as usize {
             return;

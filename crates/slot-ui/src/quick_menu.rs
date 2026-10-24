@@ -637,6 +637,7 @@ pub enum QuickValue {
     Grid,
     Dot,
     Simpletex,
+    External,
     Dark,
     Light,
     Show,
@@ -663,7 +664,7 @@ pub enum QuickValue {
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 33] = [
+    pub const ALL: [QuickValue; 34] = [
         QuickValue::Speed2,
         QuickValue::Speed3,
         QuickValue::Speed4,
@@ -674,6 +675,7 @@ impl QuickValue {
         QuickValue::Grid,
         QuickValue::Dot,
         QuickValue::Simpletex,
+        QuickValue::External,
         QuickValue::Dark,
         QuickValue::Light,
         QuickValue::Show,
@@ -737,6 +739,7 @@ impl QuickValue {
             QuickValue::Grid => "Grid",
             QuickValue::Dot => "Dot",
             QuickValue::Simpletex => "Simpletex",
+            QuickValue::External => "External",
             QuickValue::Dark => "Dark",
             QuickValue::Light => "Light",
             QuickValue::Show => "Show",
@@ -870,6 +873,38 @@ pub fn quick_pointer_face() -> UndoFace {
 
 pub fn quick_value_face(text: &str, lit: bool) -> UndoFace {
     quick_text_face(text, if lit { MENU_INK } else { DIM_INK })
+}
+
+/// A shader name, capped so it cannot run into the row's label or caret.
+pub fn quick_external_value_face(text: &str, lit: bool) -> UndoFace {
+    const MAX_W: f32 = 360.0;
+    let Some(font) = text::label_font() else {
+        return quick_value_face(text, lit);
+    };
+    let colour = if lit { MENU_INK } else { DIM_INK };
+    let upper = text.to_uppercase();
+    let tracking = text::tracking_for(MENU_PX);
+    let room = MAX_W - 2.0 * MENU_PAD as f32;
+    let width = |text: &str| text::line_width(font, text, MENU_PX, tracking);
+    if width(&upper) <= room {
+        return quick_text_face(text, colour);
+    }
+    let ellipsis = "…";
+    let ellipsis_w = width(ellipsis);
+    let mut cut = String::new();
+    for ch in upper.chars() {
+        let mut trial = cut.clone();
+        trial.push(ch);
+        if width(&trial) + ellipsis_w > room {
+            break;
+        }
+        cut = trial;
+    }
+    while cut.ends_with(' ') {
+        cut.pop();
+    }
+    cut.push_str(ellipsis);
+    quick_text_face(&cut, colour)
 }
 
 pub fn quick_warning_value_face(text: &str, lit: bool) -> UndoFace {
@@ -1107,6 +1142,8 @@ pub struct QuickMenuFaces {
     pub labels: Vec<[(TexId, u32, u32); 2]>,
     pub pointer: (TexId, u32, u32),
     pub values: Vec<[(TexId, u32, u32); 2]>,
+    pub external_values: Vec<(String, [(TexId, u32, u32); 2])>,
+    pub external_toasts: Vec<(String, (TexId, u32, u32))>,
     pub carets: [(TexId, u32, u32); 2],
     pub legend: [(TexId, u32); 8],
     pub legend_light: [(TexId, u32); 8],
@@ -1117,6 +1154,7 @@ pub struct QuickMenu<'a> {
     pub row: QuickRow,
     pub hidden: &'a [QuickRow],
     pub values: [Option<QuickValue>; QuickRow::ALL.len()],
+    pub external_values: [Option<[(TexId, u32, u32); 2]>; QuickRow::ALL.len()],
     pub clock: Option<[(TexId, u32, u32); 2]>,
     pub wallpaper: Option<[(TexId, u32, u32); 2]>,
     pub faces: Option<&'a QuickMenuFaces>,
@@ -1184,21 +1222,26 @@ impl QuickMenu<'_> {
                     push(out, tex, px, y - POINTER_BLEED as f32, pw, ph);
                 }
             }
-            let value = match row {
-                QuickRow::DateTime => self.clock.map(|c| c[lit as usize]),
-                QuickRow::Wallpaper => self.wallpaper.map(|c| c[lit as usize]),
-                QuickRow::Palette | QuickRow::GbPalette => self.palette.map(|c| c[lit as usize]),
-                QuickRow::GbaBezel => self.gba_bezel.map(|c| c[lit as usize]),
-                QuickRow::GbBezel => self.gb_bezel.map(|c| c[lit as usize]),
-                QuickRow::GbcBezel => self.gbc_bezel.map(|c| c[lit as usize]),
-                QuickRow::Bezel => self.bezel.map(|c| c[lit as usize]),
-                _ if row.binds() => self
-                    .bound
-                    .and_then(|b| b.get(row.index()).copied().flatten())
-                    .map(|c| c[lit as usize]),
-                _ => self.values[row.index()]
-                    .and_then(|v| faces.values.get(v.index()))
-                    .map(|v| v[lit as usize]),
+            let value = match self.external_values[row.index()] {
+                Some(values) => Some(values[lit as usize]),
+                None => match row {
+                    QuickRow::DateTime => self.clock.map(|c| c[lit as usize]),
+                    QuickRow::Wallpaper => self.wallpaper.map(|c| c[lit as usize]),
+                    QuickRow::Palette | QuickRow::GbPalette => {
+                        self.palette.map(|c| c[lit as usize])
+                    }
+                    QuickRow::GbaBezel => self.gba_bezel.map(|c| c[lit as usize]),
+                    QuickRow::GbBezel => self.gb_bezel.map(|c| c[lit as usize]),
+                    QuickRow::GbcBezel => self.gbc_bezel.map(|c| c[lit as usize]),
+                    QuickRow::Bezel => self.bezel.map(|c| c[lit as usize]),
+                    _ if row.binds() => self
+                        .bound
+                        .and_then(|b| b.get(row.index()).copied().flatten())
+                        .map(|c| c[lit as usize]),
+                    _ => self.values[row.index()]
+                        .and_then(|v| faces.values.get(v.index()))
+                        .map(|v| v[lit as usize]),
+                },
             };
             let Some((tex, w, h)) = value else {
                 continue;

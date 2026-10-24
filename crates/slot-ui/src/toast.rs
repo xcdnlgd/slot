@@ -24,6 +24,7 @@ pub enum Toast {
     ShaderGrid,
     ShaderDot,
     ShaderSimpletex,
+    ShaderExternal,
     CardUnwritable,
     CardRepair,
     CardRepairCharge,
@@ -34,7 +35,7 @@ pub enum Toast {
 }
 
 impl Toast {
-    const FIXED: [Toast; 21] = [
+    const FIXED: [Toast; 22] = [
         Toast::StateSaved,
         Toast::StateLoaded,
         Toast::ShotCaptured,
@@ -51,6 +52,7 @@ impl Toast {
         Toast::ShaderGrid,
         Toast::ShaderDot,
         Toast::ShaderSimpletex,
+        Toast::ShaderExternal,
         Toast::CardUnwritable,
         Toast::CardRepair,
         Toast::CardRepairCharge,
@@ -138,6 +140,7 @@ impl Toast {
             Toast::ShaderGrid => "Shader: Grid",
             Toast::ShaderDot => "Shader: Dot",
             Toast::ShaderSimpletex => "Shader: Simpletex",
+            Toast::ShaderExternal => "Shader: External",
             Toast::CardUnwritable => "Can't write to SD card",
             Toast::CardRepair | Toast::CardRepairCharge => "Can't write to SD card",
             Toast::CardRepaired => "SD card repaired",
@@ -219,6 +222,82 @@ fn detail_h(toast: Toast) -> u32 {
 }
 
 pub fn toast_face(toast: Toast) -> CartFace {
+    toast_text_face(
+        &toast.text(),
+        toast.icon(),
+        toast.detail(),
+        setting(toast),
+        detail_h(toast),
+    )
+}
+
+/// A toast for an external shader, whose name is only known from the card.
+pub fn shader_toast_face(name: &str, width: u32) -> CartFace {
+    let text = format!("Shader: {name}");
+    let text = match text::label_font() {
+        Some(font) => clip_to_width(
+            font,
+            &text,
+            width as f32,
+            TOAST_PX,
+            text::tracking_for(TOAST_PX),
+        ),
+        None => text,
+    };
+    toast_text_face(
+        &text,
+        None,
+        None,
+        Setting {
+            w: width,
+            h: TOAST_H,
+            px: TOAST_PX,
+            min_px: TOAST_MIN_PX,
+            middle: PLATE_H / 2.0,
+        },
+        0,
+    )
+}
+
+/// Cut a single line to `max_w`, keeping the ellipsis inside the measured
+/// width. The toast keeps its normal 16 px type rather than shrinking first.
+fn clip_to_width(
+    font: &fontdue::Font,
+    text: &str,
+    max_w: f32,
+    px: f32,
+    tracking: f32,
+) -> String {
+    let upper = text.to_uppercase();
+    let width = |text: &str| text::line_width(font, text, px, tracking);
+    if width(&upper) <= max_w {
+        return upper;
+    }
+    let ellipsis = "…";
+    let ellipsis_w = width(ellipsis);
+    let mut cut = String::new();
+    for ch in upper.chars() {
+        let mut trial = cut.clone();
+        trial.push(ch);
+        if width(&trial) + ellipsis_w > max_w {
+            break;
+        }
+        cut = trial;
+    }
+    while cut.ends_with(' ') {
+        cut.pop();
+    }
+    cut.push_str(ellipsis);
+    cut
+}
+
+fn toast_text_face(
+    text: &str,
+    icon: Option<Icon>,
+    detail: Option<&str>,
+    s: Setting,
+    detail_h: u32,
+) -> CartFace {
     let Some(font) = text::label_font() else {
         return CartFace {
             rgba: Vec::new(),
@@ -226,24 +305,23 @@ pub fn toast_face(toast: Toast) -> CartFace {
             h: 0,
         };
     };
-    let s = setting(toast);
-    let icon = toast.icon().and_then(|i| icon_coverage(i, TOAST_ICON_PX));
-    let room = icon
+    let icon_face = icon.and_then(|i| icon_coverage(i, TOAST_ICON_PX));
+    let room = icon_face
         .as_ref()
         .map_or(s.w, |(_, iw, _)| s.w.saturating_sub(iw + ICON_GAP));
-    let layout = text::fit(font, &toast.text(), room as f32, 1, s.px, s.min_px);
-    let (mut cov, tinted) = match icon {
+    let layout = text::fit(font, text, room as f32, 1, s.px, s.min_px);
+    let (mut cov, tinted) = match icon_face {
         Some(icon) => beside(icon, font, &layout, &s),
         None => (text::coverage(s.w, s.h, &layout), 0..0),
     };
-    if let Some(detail) = toast.detail() {
+    if let Some(detail) = detail {
         let layout = text::fit(font, detail, s.w as f32, 1, DETAIL_PX, DETAIL_PX);
         cov.extend(text::coverage(s.w, DETAIL_H, &layout));
     }
-    if tinted.is_empty() || toast.icon() != Some(Icon::Alert) {
-        return haloed(&cov, s.w, s.h + detail_h(toast), HUD_INK);
+    if tinted.is_empty() || icon != Some(Icon::Alert) {
+        return haloed(&cov, s.w, s.h + detail_h, HUD_INK);
     }
-    haloed_with(&cov, s.w, s.h + detail_h(toast), |x, _| {
+    haloed_with(&cov, s.w, s.h + detail_h, |x, _| {
         match tinted.contains(&(x as u32)) {
             true => WARNING_INK,
             false => HUD_INK,
@@ -281,6 +359,16 @@ fn beside(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_shader_toast_is_cut_with_an_ellipsis() {
+        let font = text::label_font().expect("label font");
+        let text = format!("Shader: {}", "very-long-name-".repeat(20));
+        let tracking = text::tracking_for(TOAST_PX);
+        let cut = clip_to_width(font, &text, TOAST_W as f32, TOAST_PX, tracking);
+        assert!(cut.ends_with('…'));
+        assert!(text::line_width(font, &cut, TOAST_PX, tracking) <= TOAST_W as f32);
+    }
 
     fn ink_width(toast: Toast) -> u32 {
         let font = text::label_font().expect("label font");

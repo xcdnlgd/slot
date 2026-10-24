@@ -50,6 +50,7 @@ impl ApplicationHandler for Slot {
         let panel = panel_override().unwrap_or((OUT_W, OUT_H));
         compositor.set_panel(Some(panel));
         let panel = compositor.panel_size(surface.window_size());
+        self.frontend.set_panel(panel);
         self.frontend.upload_faces(&mut compositor);
         self.frontend.upload_bezel(&mut compositor, panel);
         self.gfx = Some((surface, compositor));
