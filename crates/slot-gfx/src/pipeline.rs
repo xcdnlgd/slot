@@ -1,5 +1,5 @@
 use crate::lcd3x::ScreenEffect;
-use crate::power::{screen_brightness, screen_rect_above};
+use crate::power::{screen_brightness, screen_rect_above, screen_scale};
 use crate::quad::Quad;
 use crate::shaders::{GAME_FRAG, RECT_VERT};
 use crate::surface::{GfxError, OUT_H, OUT_W};
@@ -17,6 +17,7 @@ pub struct GamePass {
     u_bright: gl::types::GLint,
     u_uv: gl::types::GLint,
     u_src: gl::types::GLint,
+    u_target: gl::types::GLint,
     u_mode: gl::types::GLint,
     u_paper_size: gl::types::GLint,
     u_fbo: gl::types::GLint,
@@ -48,17 +49,14 @@ impl GamePass {
             crate::gl::gray_format(),
             Some(&[255]),
         );
-        let (u_rect, u_bright, u_uv, u_src, u_mode, u_paper_size, u_pic, u_fbo, u_origin);
+        let (u_rect, u_bright, u_uv, u_src, u_target, u_mode, u_paper_size, u_pic, u_fbo, u_origin);
         unsafe {
             gl::UseProgram(prog);
             gl::Uniform1i(crate::gl::uniform_location(prog, "u_game"), 0);
             u_src = crate::gl::uniform_location(prog, "u_src");
             gl::Uniform2f(u_src, SRC_W as f32, SRC_H as f32);
-            gl::Uniform2f(
-                crate::gl::uniform_location(prog, "u_target"),
-                OUT_W as f32,
-                OUT_H as f32,
-            );
+            u_target = crate::gl::uniform_location(prog, "u_target");
+            gl::Uniform2f(u_target, OUT_W as f32, OUT_H as f32);
             u_rect = crate::gl::uniform_location(prog, "u_rect");
             u_bright = crate::gl::uniform_location(prog, "u_bright");
             u_uv = crate::gl::uniform_location(prog, "u_uv");
@@ -76,6 +74,7 @@ impl GamePass {
             u_bright,
             u_uv,
             u_src,
+            u_target,
             u_mode,
             u_paper_size,
             u_fbo,
@@ -103,12 +102,16 @@ impl GamePass {
         self.bottom = px.max(0.0);
     }
 
-    pub fn frame(&self) -> (f32, f32, f32, f32) {
-        self.placed()
-    }
-
     pub fn frame_size(&self) -> (u32, u32) {
         self.frame
+    }
+
+    pub fn stretch(&self) -> bool {
+        self.src != WHOLE_TEXTURE
+    }
+
+    pub fn screen_scale(&self) -> f32 {
+        screen_scale(self.power)
     }
 
     fn placed(&self) -> (f32, f32, f32, f32) {
@@ -238,6 +241,33 @@ impl GamePass {
             },
         };
         self.draw_source(self.game, quad, src);
+    }
+
+    /// Draw the whole frame into an game-rect-sized target. No panel geometry
+    /// is involved: the caller owns the target framebuffer and viewport.
+    pub fn draw_full(&self, quad: &Quad, size: (u32, u32)) {
+        let (w, h) = (size.0 as f32, size.1 as f32);
+        unsafe {
+            gl::UseProgram(self.prog);
+            gl::Uniform4f(self.u_rect, 0.0, 0.0, w, h);
+            gl::Uniform4f(self.u_uv, 0.0, 0.0, 1.0, 1.0);
+            gl::Uniform2f(self.u_target, w, h);
+            gl::Uniform1f(self.u_bright, self.brightness());
+            gl::Uniform1f(self.u_mode, self.effect.mode());
+            gl::Uniform1f(self.u_paper_size, self.paper_size);
+            gl::Uniform2f(
+                self.u_fbo,
+                w / OUT_W as f32,
+                h / OUT_H as f32,
+            );
+            gl::Uniform2f(self.u_origin, 0.0, 0.0);
+            gl::Uniform4f(self.u_pic, 0.0, 0.0, 1.0, 1.0);
+            gl::ActiveTexture(gl::TEXTURE1);
+            gl::BindTexture(gl::TEXTURE_2D, self.paper);
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, self.game);
+        }
+        quad.draw();
     }
 
     pub fn draw_still(&self, tex: gl::types::GLuint, quad: &Quad) {

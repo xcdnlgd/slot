@@ -1,7 +1,7 @@
 use crate::draw::{Draw, Sprites, TexId};
 use crate::external::{ExternalProgram, ShaderSource};
 use crate::grade::blue_light_gain;
-use crate::pipeline::GamePass;
+use crate::pipeline::{GamePass, SRC_H, SRC_W};
 use crate::quad::Quad;
 use crate::shaders::{BLIT_FRAG, BLIT_VERT, TURN_VERT};
 use crate::surface::{blit_panel_rect, blit_rect, GfxError, Surface, OUT_H, OUT_W};
@@ -12,6 +12,12 @@ pub const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 struct Turn {
     panel: (u32, u32),
     prog: gl::types::GLuint,
+    fbo: gl::types::GLuint,
+    tex: gl::types::GLuint,
+    size: (u32, u32),
+}
+
+struct GameRect {
     fbo: gl::types::GLuint,
     tex: gl::types::GLuint,
     size: (u32, u32),
@@ -35,6 +41,7 @@ pub struct Compositor {
     game_bezel: Option<TexId>,
     sp_frame: bool,
     turn: Option<Turn>,
+    game_rect: Option<GameRect>,
     captured: Option<(u32, u32, Vec<u8>)>,
     external: Option<ExternalProgram>,
     external_linear: bool,
@@ -89,6 +96,7 @@ impl Compositor {
                 game_bezel: None,
                 sp_frame: true,
                 turn: None,
+                game_rect: None,
                 captured: None,
                 external: None,
                 external_linear: false,
@@ -136,22 +144,8 @@ impl Compositor {
             match *item {
                 Draw::Game => {
                     self.sprites.draw(&items[from..i], &self.quad);
-                    if self.external.is_some() {
-                        self.draw_external();
-                        if self.panel_bezel().is_none() {
-                            self.draw_game_bezel();
-                        }
-                    } else {
-                        self.in_game_rect(|c| {
-                            c.game.draw(&c.quad);
-                            if c.panel_bezel().is_none() {
-                                c.draw_game_bezel();
-                            }
-                        });
-                    }
-                    if let Some(bezel) = self.panel_bezel() {
-                        self.sprites.draw(&[bezel], &self.quad);
-                    }
+                    self.render_game();
+                    self.draw_game_bezel();
                 }
                 Draw::Shot { tex } => {
                     self.sprites.draw(&items[from..i], &self.quad);
@@ -216,21 +210,21 @@ impl Compositor {
         let Some(tex) = self.game_bezel else {
             return;
         };
-        let (x, y, w, h) = self.game.frame();
-        self.sprites.set_target(Canvas::FRAMED);
+        let panel = self.panel_size(self.window);
+        let canvas = Canvas::of(panel);
+        self.sprites.set_target(canvas);
         self.sprites.draw(
             &[Draw::Tex {
-                x,
-                y,
-                w,
-                h,
+                x: 0.0,
+                y: 0.0,
+                w: canvas.w,
+                h: canvas.h,
                 tex,
                 alpha: 1.0,
             }],
             &self.quad,
         );
-        self.sprites
-            .set_target(Canvas::of(self.panel_size(self.window)));
+        self.sprites.set_target(canvas);
     }
 
     pub fn set_paper(&mut self, size: u32, gray: &[u8]) {
@@ -476,55 +470,112 @@ impl Compositor {
         self.blit_part(x, y, w, h, [0.0, 0.0, 1.0, 1.0]);
     }
 
-    fn panel_bezel(&self) -> Option<Draw> {
-        let panel = self.panel_size(self.window);
-        let tex = self.game_bezel.filter(|_| crate::bezel::framed(panel))?;
-        let canvas = Canvas::of(panel);
-        Some(Draw::Tex {
-            x: 0.0,
-            y: 0.0,
-            w: canvas.w,
-            h: canvas.h,
-            tex,
-            alpha: 1.0,
-        })
-    }
 }
 
 impl Compositor {
-    fn external_rect(&self) -> (f32, f32, f32, f32) {
-        let (x, y, w, h) = self.game.frame();
-        if !self.native() {
-            return (x, y, w, h);
-        }
+    fn panel_game_rect(&self) -> (f32, f32, f32, f32) {
         let panel = self.panel_size(self.window);
-        place_in_game(
-            (x, y, w, h),
-            crate::bezel::game_rect(panel, self.sp_frame),
+        let (w, h) = game_rect_size(panel, self.game.frame_size(), self.game.stretch());
+        let scale = self.game.screen_scale();
+        let (w, h) = (w * scale, h * scale);
+        (
+            (panel.0 as f32 - w) / 2.0,
+            (panel.1 as f32 - h) / 2.0,
+            w,
+            h,
         )
     }
 
-    fn draw_external(&mut self) {
-        let (x, top, w, h) = self.external_rect();
+    fn ensure_game_rect(&mut self, size: (u32, u32)) {
+        if self.game_rect.as_ref().is_some_and(|a| a.size == size) {
+            return;
+        }
+        let tex = crate::gl::texture(
+            size.0,
+            size.1,
+            gl::NEAREST,
+            gl::CLAMP_TO_EDGE,
+            gl::RGBA,
+            None,
+        );
+        let mut fbo = 0;
+        unsafe {
+            gl::GenFramebuffers(1, &mut fbo);
+            gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+            gl::FramebufferTexture2D(
+                gl::FRAMEBUFFER,
+                gl::COLOR_ATTACHMENT0,
+                gl::TEXTURE_2D,
+                tex,
+                0,
+            );
+            let complete = gl::CheckFramebufferStatus(gl::FRAMEBUFFER)
+                == gl::FRAMEBUFFER_COMPLETE;
+            gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+            if !complete {
+                gl::DeleteFramebuffers(1, &fbo);
+                gl::DeleteTextures(1, &tex);
+                return;
+            }
+        }
+        if let Some(old) = self.game_rect.take() {
+            unsafe {
+                gl::DeleteFramebuffers(1, &old.fbo);
+                gl::DeleteTextures(1, &old.tex);
+            }
+        }
+        self.game_rect = Some(GameRect { fbo, tex, size });
+    }
+
+    fn blit_game_rect(&mut self, x: i32, top: i32, w: i32, h: i32) {
+        let Some(game_rect) = &self.game_rect else {
+            return;
+        };
+        let y = self.size.1 as i32 - top - h;
+        unsafe {
+            gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo);
+            gl::Viewport(x, y, w, h);
+            gl::UseProgram(self.blit);
+            gl::Uniform3f(self.u_gain, self.gain[0], self.gain[1], self.gain[2]);
+            gl::Uniform4f(self.u_blit_uv, 0.0, 0.0, 1.0, 1.0);
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, game_rect.tex);
+            self.quad.draw();
+            gl::Viewport(0, 0, self.size.0 as i32, self.size.1 as i32);
+        }
+    }
+
+    fn render_game(&mut self) {
+        let (x, top, w, h) = self.panel_game_rect();
         let w = w.round().max(1.0) as i32;
         let h = h.round().max(1.0) as i32;
         let x = x.round() as i32;
-        let y = (self.size.1 as f32 - top - h as f32).round() as i32;
-        self.game.set_linear(self.external_linear);
-        let bright = self.game.brightness();
-        let texture = self.game.texture();
-        if let Some(program) = &self.external {
-            unsafe { gl::Viewport(x, y, w, h) };
-            program.draw(
-                texture,
-                self.game.frame_size(),
-                (w as u32, h as u32),
-                self.frame_count,
-                bright,
-            );
+        let top = top.round() as i32;
+        let size = (w as u32, h as u32);
+        self.ensure_game_rect(size);
+        let Some(game_rect) = &self.game_rect else {
+            return;
+        };
+        unsafe {
+            gl::BindFramebuffer(gl::FRAMEBUFFER, game_rect.fbo);
+            gl::Viewport(0, 0, w, h);
+            gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
         }
-        self.game.set_linear(false);
-        unsafe { gl::Viewport(0, 0, self.size.0 as i32, self.size.1 as i32) };
+        if let Some(program) = &self.external {
+            self.game.set_linear(self.external_linear);
+            program.draw(
+                self.game.texture(),
+                self.game.frame_size(),
+                size,
+                self.frame_count,
+                self.game.brightness(),
+            );
+            self.game.set_linear(false);
+        } else {
+            self.game.draw_full(&self.quad, size);
+        }
+        self.blit_game_rect(x, top, w, h);
     }
 
     fn in_game_rect(&mut self, draw: impl FnOnce(&mut Self)) {
@@ -556,15 +607,19 @@ impl Compositor {
     }
 }
 
-fn place_in_game(
-    rect: (f32, f32, f32, f32),
-    game: (i32, i32, i32, i32),
-) -> (f32, f32, f32, f32) {
-    let (x, y, w, h) = rect;
-    let (gx, gy, gw, gh) = game;
-    let sx = gw as f32 / OUT_W as f32;
-    let sy = gh as f32 / OUT_H as f32;
-    (gx as f32 + x * sx, gy as f32 + y * sy, w * sx, h * sy)
+pub fn game_rect_size(panel: (u32, u32), frame: (u32, u32), stretch: bool) -> (f32, f32) {
+    let (pw, ph) = panel;
+    let (fw, fh) = frame;
+    if stretch {
+        let scale = (pw as f32 / SRC_W as f32).min(ph as f32 / SRC_H as f32);
+        return (pw as f32, fh as f32 * scale);
+    }
+    if frame == (SRC_W, SRC_H) {
+        let scale = (pw as f32 / fw as f32).min(ph as f32 / fh as f32);
+        return (fw as f32 * scale, fh as f32 * scale);
+    }
+    let scale = (pw / fw).min(ph / fh).max(1);
+    ((fw * scale) as f32, (fh * scale) as f32)
 }
 
 pub fn canvas_size(window: (u32, u32)) -> (u32, u32) {
@@ -579,21 +634,26 @@ pub fn canvas_size(window: (u32, u32)) -> (u32, u32) {
 
 #[cfg(test)]
 mod tests {
-    use super::place_in_game;
+    use super::game_rect_size;
 
     #[test]
-    fn a_game_boy_picture_keeps_its_own_aperture() {
-        let rect = place_in_game((120.0, 24.0, 480.0, 432.0), (0, 27, 640, 427));
-        assert!((rect.0 - 106.666_67).abs() < 0.01, "{rect:?}");
-        assert!((rect.1 - 48.35).abs() < 0.01, "{rect:?}");
-        assert!((rect.2 - 426.666_66).abs() < 0.01, "{rect:?}");
-        assert!((rect.3 - 384.3).abs() < 0.01, "{rect:?}");
+    fn a_game_boy_picture_uses_an_integer_game_rect_on_both_panels() {
+        assert_eq!(game_rect_size((640, 480), (160, 144), false), (480.0, 432.0));
+        assert_eq!(game_rect_size((720, 480), (160, 144), false), (480.0, 432.0));
     }
 
     #[test]
-    fn a_gba_picture_takes_the_whole_aperture() {
-        let rect = place_in_game((0.0, 0.0, 720.0, 480.0), (0, 27, 640, 427));
-        assert_eq!(rect, (0.0, 27.0, 640.0, 427.0));
+    fn a_gba_picture_fills_the_available_3_by_2_game_rect() {
+        let (w, h) = game_rect_size((640, 480), (240, 160), false);
+        assert!((w - 640.0).abs() < 0.01);
+        assert!((h - 426.666_66).abs() < 0.01);
+        assert_eq!(game_rect_size((720, 480), (240, 160), false), (720.0, 480.0));
+    }
+
+    #[test]
+    fn stretching_a_game_boy_picture_uses_the_panel_width() {
+        assert_eq!(game_rect_size((640, 480), (160, 144), true), (640.0, 384.0));
+        assert_eq!(game_rect_size((720, 480), (160, 144), true), (720.0, 432.0));
     }
 }
 
@@ -603,6 +663,10 @@ impl Drop for Compositor {
             gl::DeleteFramebuffers(1, &self.fbo);
             gl::DeleteTextures(1, &self.tex);
             gl::DeleteProgram(self.blit);
+            if let Some(game_rect) = &self.game_rect {
+                gl::DeleteFramebuffers(1, &game_rect.fbo);
+                gl::DeleteTextures(1, &game_rect.tex);
+            }
             if let Some(turn) = &self.turn {
                 gl::DeleteProgram(turn.prog);
                 if turn.fbo != 0 {

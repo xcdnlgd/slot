@@ -22,13 +22,20 @@ pub fn bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
 
 pub fn game_bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
     let (src, sw, sh) = art::decode(path)?;
-    panel_bezel(&src, (sw, sh), (w, h), false)
+    panel_bezel(&src, (sw, sh), (w, h), None, false)
 }
 
 pub fn default_game_bezel_face(colour: bool, w: u32, h: u32) -> Option<Vec<u8>> {
     let png = if colour { BEZEL_GBC_PNG } else { BEZEL_GB_PNG };
     let (src, sw, sh) = art::decode_png_bytes(png)?;
-    panel_bezel(&src, (sw, sh), (w, h), true)
+    let (gw, gh) = slot_gfx::game_rect_size((w, h), (160, 144), false);
+    panel_bezel(
+        &src,
+        (sw, sh),
+        (w, h),
+        Some((gw.round() as u32, gh.round() as u32)),
+        true,
+    )
 }
 
 const BEZEL_GRAIN_ROWS: usize = 10;
@@ -37,12 +44,16 @@ fn panel_bezel(
     src: &[u8],
     (sw, sh): (u32, u32),
     (w, h): (u32, u32),
+    game_h: Option<(u32, u32)>,
     extend: bool,
 ) -> Option<Vec<u8>> {
     if !slot_gfx::framed((w, h)) || sw * 3 == sh * 4 {
         return art::cover_rgba(src, sw, sh, w, h);
     }
-    let game_h = slot_gfx::screen_rect((w, h)).3 as usize;
+    let game_h = game_h
+        .map(|(_, h)| h)
+        .unwrap_or(slot_gfx::screen_rect((w, h)).3 as u32)
+        .min(h) as usize;
     let inner = art::cover_rgba(src, sw, sh, w, game_h as u32)?;
     let (h, row) = (h as usize, w as usize * 4);
     let gap = h - game_h;

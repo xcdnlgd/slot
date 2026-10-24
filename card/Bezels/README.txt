@@ -9,10 +9,10 @@ Make it the size of the screen:
   RG SP          720 x 480   x 120, y 24, 480 x 432
   RG34XX         720 x 480   x 120, y 24, 480 x 432
   RG34XXSP       720 x 480   x 120, y 24, 480 x 432
-  RG35XXSP       640 x 480   x 107, y 48, 427 x 384
-  RG35XX Plus    640 x 480   x 107, y 48, 427 x 384
-  RG35XX-H       640 x 480   x 107, y 48, 427 x 384
-  RG28XX         640 x 480   x 107, y 48, 427 x 384
+  RG35XXSP       640 x 480   x 80,  y 24, 480 x 432
+  RG35XX Plus    640 x 480   x 80,  y 24, 480 x 432
+  RG35XX-H       640 x 480   x 80,  y 24, 480 x 432
+  RG28XX         640 x 480   x 80,  y 24, 480 x 432
 
 GBA bezels show only on the 640 x 480 devices, where the game shows at
 x 0, y 27, 640 x 427. On the 720 x 480 devices a GBA game fills the screen.
