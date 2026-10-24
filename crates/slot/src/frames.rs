@@ -9,9 +9,15 @@ pub struct Frames {
 }
 
 struct Inner {
-    ready: Option<Vec<u8>>,
+    ready: Option<Frame>,
     spare: Vec<Vec<u8>>,
     allocated: usize,
+}
+
+struct Frame {
+    pixels: Vec<u8>,
+    width: u32,
+    height: u32,
 }
 
 impl Frames {
@@ -38,19 +44,26 @@ impl Frames {
         }
     }
 
-    pub fn publish(&self, buf: Vec<u8>) {
+    pub fn publish(&self, pixels: Vec<u8>, (width, height): (u32, u32)) {
+        let frame = Frame {
+            pixels,
+            width,
+            height,
+        };
         let mut i = self.lock();
-        if let Some(dropped) = i.ready.replace(buf) {
-            i.spare.push(dropped);
+        if let Some(dropped) = i.ready.replace(frame) {
+            i.spare.push(dropped.pixels);
         }
     }
 
     pub fn latest(self: &Arc<Self>) -> Option<FrameRef> {
-        let buf = self.lock().ready.take()?;
+        let frame = self.lock().ready.take()?;
         self.taken.fetch_add(1, Ordering::Relaxed);
         Some(FrameRef {
             frames: self.clone(),
-            buf,
+            pixels: frame.pixels,
+            width: frame.width,
+            height: frame.height,
         })
     }
 
@@ -77,19 +90,27 @@ impl Frames {
 
 pub struct FrameRef {
     frames: Arc<Frames>,
-    buf: Vec<u8>,
+    pixels: Vec<u8>,
+    width: u32,
+    height: u32,
+}
+
+impl FrameRef {
+    pub fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
 }
 
 impl Deref for FrameRef {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        &self.buf
+        &self.pixels
     }
 }
 
 impl Drop for FrameRef {
     fn drop(&mut self) {
-        self.frames.recycle(std::mem::take(&mut self.buf));
+        self.frames.recycle(std::mem::take(&mut self.pixels));
     }
 }

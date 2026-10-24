@@ -687,7 +687,7 @@ impl Worker {
                     }
                     core.set_frame_skip(false);
                     core.run_frame(ButtonMask(0));
-                    self.publish(core.video_xrgb8888());
+                    self.publish(core.video_xrgb8888(), core.video_size());
                 }
                 self.shared
                     .rewind_fill
@@ -805,7 +805,7 @@ impl Worker {
                     }
                 }
                 flush_outbound(&mut transport, &link);
-                self.publish(core.video_xrgb8888());
+                self.publish(core.video_xrgb8888(), core.video_size());
                 self.frame_done(served);
 
                 since_snapshot += 1;
@@ -930,7 +930,7 @@ impl Worker {
                     core.run_frame(ButtonMask(0));
                     core.set_frame_skip(false);
                     core.run_frame(ButtonMask(0));
-                    self.publish(core.video_xrgb8888());
+                    self.publish(core.video_xrgb8888(), core.video_size());
                     let _ = core.take_audio();
                     if let Err(e) = core.unserialize(&state) {
                         eprintln!("slot: refresh: {e}");
@@ -942,7 +942,7 @@ impl Worker {
                 let _ = reply.send(core.save_ram());
             }
             Cmd::Thumb(reply) => {
-                let _ = reply.send(crate::thumb::png(core.video_xrgb8888()));
+                let _ = reply.send(crate::thumb::png(core.video_xrgb8888(), core.video_size()));
             }
             Cmd::BeginLink(client_id, t) => {
                 self.shared.link_lost.store(false, Ordering::Relaxed);
@@ -1033,11 +1033,11 @@ impl Worker {
         }
     }
 
-    fn publish(&self, video: &[u8]) {
+    fn publish(&self, video: &[u8], size: (u32, u32)) {
         let mut buf = self.frames.take_write();
         buf.clear();
         buf.extend_from_slice(video);
-        self.frames.publish(buf);
+        self.frames.publish(buf, size);
         self.shared.published.fetch_add(1, Ordering::Relaxed);
         crate::latency::published();
     }

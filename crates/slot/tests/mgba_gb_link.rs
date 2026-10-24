@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use slot_retro::{ButtonMask, LibretroCore, RetroCore};
 
 fn vendored() -> Option<PathBuf> {
-    let p = common::repo_root().join(format!(
-        "vendor/mgba_libretro.{}",
+    let p = common::repo_root().join("vendor").join(std::env::consts::ARCH).join(format!(
+        "mgba_libretro.{}",
         std::env::consts::DLL_EXTENSION
     ));
     p.exists().then_some(p)

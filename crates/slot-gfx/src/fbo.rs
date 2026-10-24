@@ -122,6 +122,10 @@ impl Compositor {
         self.game.upload(xrgb8888);
     }
 
+    pub fn upload_game_sized(&mut self, xrgb8888: &[u8], size: (u32, u32)) {
+        self.game.upload_sized(xrgb8888, size);
+    }
+
     pub fn draw_game(&mut self) {
         self.in_game_rect(|c| c.game.draw(&c.quad));
     }
@@ -488,14 +492,20 @@ impl Compositor {
 }
 
 impl Compositor {
-    fn draw_external(&mut self) {
+    fn external_rect(&self) -> (f32, f32, f32, f32) {
+        let (x, y, w, h) = self.game.frame();
+        if !self.native() {
+            return (x, y, w, h);
+        }
         let panel = self.panel_size(self.window);
-        let (x, top, w, h) = if self.native() {
-            let (x, y, w, h) = crate::bezel::game_rect(panel, self.sp_frame);
-            (x as f32, y as f32, w as f32, h as f32)
-        } else {
-            self.game.frame()
-        };
+        place_in_game(
+            (x, y, w, h),
+            crate::bezel::game_rect(panel, self.sp_frame),
+        )
+    }
+
+    fn draw_external(&mut self) {
+        let (x, top, w, h) = self.external_rect();
         let w = w.round().max(1.0) as i32;
         let h = h.round().max(1.0) as i32;
         let x = x.round() as i32;
@@ -507,7 +517,7 @@ impl Compositor {
             unsafe { gl::Viewport(x, y, w, h) };
             program.draw(
                 texture,
-                (crate::pipeline::SRC_W, crate::pipeline::SRC_H),
+                self.game.frame_size(),
                 (w as u32, h as u32),
                 self.frame_count,
                 bright,
@@ -546,6 +556,17 @@ impl Compositor {
     }
 }
 
+fn place_in_game(
+    rect: (f32, f32, f32, f32),
+    game: (i32, i32, i32, i32),
+) -> (f32, f32, f32, f32) {
+    let (x, y, w, h) = rect;
+    let (gx, gy, gw, gh) = game;
+    let sx = gw as f32 / OUT_W as f32;
+    let sy = gh as f32 / OUT_H as f32;
+    (gx as f32 + x * sx, gy as f32 + y * sy, w * sx, h * sy)
+}
+
 pub fn canvas_size(window: (u32, u32)) -> (u32, u32) {
     let (_, _, w, h) = blit_rect(window, 0.0);
     let (w, h) = (w.max(1) as u32, h.max(1) as u32);
@@ -553,6 +574,26 @@ pub fn canvas_size(window: (u32, u32)) -> (u32, u32) {
         (OUT_W, OUT_H)
     } else {
         (w, h)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::place_in_game;
+
+    #[test]
+    fn a_game_boy_picture_keeps_its_own_aperture() {
+        let rect = place_in_game((120.0, 24.0, 480.0, 432.0), (0, 27, 640, 427));
+        assert!((rect.0 - 106.666_67).abs() < 0.01, "{rect:?}");
+        assert!((rect.1 - 48.35).abs() < 0.01, "{rect:?}");
+        assert!((rect.2 - 426.666_66).abs() < 0.01, "{rect:?}");
+        assert!((rect.3 - 384.3).abs() < 0.01, "{rect:?}");
+    }
+
+    #[test]
+    fn a_gba_picture_takes_the_whole_aperture() {
+        let rect = place_in_game((0.0, 0.0, 720.0, 480.0), (0, 27, 640, 427));
+        assert_eq!(rect, (0.0, 27.0, 640.0, 427.0));
     }
 }
 

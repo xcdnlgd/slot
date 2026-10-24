@@ -20,13 +20,15 @@ fn candidates(root: &Path, core: Core) -> Vec<PathBuf> {
         return vec![PathBuf::from(named)];
     }
     let name = dylib_name(core);
+    let arch = std::env::consts::ARCH;
     let mut paths = vec![root.join("System").join(&name)];
+    paths.push(Path::new("vendor").join(arch).join(&name));
     if let Some(dir) = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(Path::to_path_buf))
     {
         paths.push(dir.join(&name));
-        paths.push(dir.join("vendor").join(&name));
+        paths.push(dir.join("vendor").join(arch).join(&name));
     }
     paths.push(Path::new("vendor").join(&name));
     paths
@@ -284,6 +286,19 @@ mod tests {
             let name = path.file_name().unwrap().to_str().unwrap();
             assert!(name.starts_with("gpsp_libretro"), "{name} is not gpSP's");
         }
+    }
+
+    #[test]
+    fn candidates_search_the_vendor_directory_for_this_architecture() {
+        let _g = lock();
+        std::env::remove_var(CORE_ENV);
+        let path = Path::new("vendor")
+            .join(std::env::consts::ARCH)
+            .join(dylib_name(Core::Mgba));
+        assert!(
+            candidates(Path::new("/root"), Core::Mgba).contains(&path),
+            "the host does not look in {path:?}"
+        );
     }
 
     #[test]

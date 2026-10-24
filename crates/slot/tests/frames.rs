@@ -4,7 +4,7 @@ fn publish(frames: &Frames, value: u8, size: usize) {
     let mut buf = frames.take_write();
     buf.clear();
     buf.resize(size, value);
-    frames.publish(buf);
+    frames.publish(buf, (1, 1));
 }
 
 #[test]
@@ -14,6 +14,7 @@ fn the_reader_gets_the_newest_frame_and_never_the_same_one_twice() {
         publish(&f, i, 4);
     }
     let latest = f.latest().expect("a published frame should be readable");
+    assert_eq!(latest.size(), (1, 1));
     assert_eq!(
         &latest[..],
         &[49u8; 4],

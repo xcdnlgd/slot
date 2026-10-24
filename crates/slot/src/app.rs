@@ -2104,10 +2104,7 @@ impl App {
     }
 
     pub fn picture_rect(&self) -> [f32; 4] {
-        let (w, h) = self.platform.picture();
-        let (sw, sh) = (slot_gfx::SRC_W as f32, slot_gfx::SRC_H as f32);
-        let (x, y) = ((sw - w as f32) / 2.0, (sh - h as f32) / 2.0);
-        [x / sw, y / sh, (x + w as f32) / sw, (y + h as f32) / sh]
+        slot_gfx::WHOLE_TEXTURE
     }
 
     pub fn may_load_state(&self) -> bool {

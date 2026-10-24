@@ -35,8 +35,7 @@ fn write_png(name: &str, w: u32, h: u32, rgba: &[u8]) {
     println!("wrote {path}");
 }
 
-fn side_by_side(left: &[u8], right: &[u8], n: usize) -> (u32, u32, Vec<u8>) {
-    let (w, h) = (GBA_W as usize, GBA_H as usize);
+fn side_by_side(left: &[u8], right: &[u8], n: usize, w: usize, h: usize) -> (u32, u32, Vec<u8>) {
     let gap = 8;
     let out_w = w * n * 2 + gap;
     let out_h = h * n;
@@ -252,9 +251,10 @@ fn colour_correction_changes_the_picture_on_every_platform() {
             "{name}: still black after {frames} frames, so there is no picture to correct"
         );
 
-        write_png(&format!("colour-{name}-off"), GBA_W, GBA_H, &off);
-        write_png(&format!("colour-{name}-on"), GBA_W, GBA_H, &on);
-        let (w, h, both) = side_by_side(&off, &on, 3);
+        let (w, h) = platform.picture();
+        write_png(&format!("colour-{name}-off"), w, h, &off);
+        write_png(&format!("colour-{name}-on"), w, h, &on);
+        let (w, h, both) = side_by_side(&off, &on, 3, w as usize, h as usize);
         write_png(&format!("colour-{name}-side-by-side"), w, h, &both);
 
         let (a, b) = (mean_rgb(&off), mean_rgb(&on));

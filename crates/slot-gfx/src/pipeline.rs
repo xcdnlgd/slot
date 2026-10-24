@@ -16,6 +16,7 @@ pub struct GamePass {
     u_rect: gl::types::GLint,
     u_bright: gl::types::GLint,
     u_uv: gl::types::GLint,
+    u_src: gl::types::GLint,
     u_mode: gl::types::GLint,
     u_paper_size: gl::types::GLint,
     u_fbo: gl::types::GLint,
@@ -32,6 +33,7 @@ pub struct GamePass {
     /// Pixels kept for the carousel footer. The picture scales in the space above them.
     bottom: f32,
     src: [f32; 4],
+    frame: (u32, u32),
 }
 
 impl GamePass {
@@ -46,15 +48,12 @@ impl GamePass {
             crate::gl::gray_format(),
             Some(&[255]),
         );
-        let (u_rect, u_bright, u_uv, u_mode, u_paper_size, u_pic, u_fbo, u_origin);
+        let (u_rect, u_bright, u_uv, u_src, u_mode, u_paper_size, u_pic, u_fbo, u_origin);
         unsafe {
             gl::UseProgram(prog);
             gl::Uniform1i(crate::gl::uniform_location(prog, "u_game"), 0);
-            gl::Uniform2f(
-                crate::gl::uniform_location(prog, "u_src"),
-                SRC_W as f32,
-                SRC_H as f32,
-            );
+            u_src = crate::gl::uniform_location(prog, "u_src");
+            gl::Uniform2f(u_src, SRC_W as f32, SRC_H as f32);
             gl::Uniform2f(
                 crate::gl::uniform_location(prog, "u_target"),
                 OUT_W as f32,
@@ -76,6 +75,7 @@ impl GamePass {
             u_rect,
             u_bright,
             u_uv,
+            u_src,
             u_mode,
             u_paper_size,
             u_fbo,
@@ -91,6 +91,7 @@ impl GamePass {
             fills: false,
             bottom: 0.0,
             src: WHOLE_TEXTURE,
+            frame: (SRC_W, SRC_H),
         })
     }
 
@@ -106,12 +107,20 @@ impl GamePass {
         self.placed()
     }
 
+    pub fn frame_size(&self) -> (u32, u32) {
+        self.frame
+    }
+
     fn placed(&self) -> (f32, f32, f32, f32) {
         let foot = self.bottom;
-        match self.fills {
+        let base = match self.fills {
             true => (0.0, 0.0, OUT_W as f32, OUT_H as f32 - foot),
             false => screen_rect_above(self.power, foot),
+        };
+        if self.frame == (SRC_W, SRC_H) {
+            return base;
         }
+        content_rect(base, self.frame, self.src != WHOLE_TEXTURE)
     }
 
     pub fn set_fills_frame(&mut self, on: bool) {
@@ -174,8 +183,34 @@ impl GamePass {
     }
 
     pub fn upload(&mut self, xrgb8888: &[u8]) {
-        if xrgb8888.len() < (SRC_W * SRC_H * 4) as usize {
+        self.upload_sized(xrgb8888, (SRC_W, SRC_H));
+    }
+
+    pub fn upload_sized(&mut self, xrgb8888: &[u8], size: (u32, u32)) {
+        let (width, height) = size;
+        if width == 0 || height == 0 {
             return;
+        }
+        let len = (width * height * 4) as usize;
+        if xrgb8888.len() < len {
+            return;
+        }
+        if size != self.frame {
+            let game = crate::gl::texture(
+                width,
+                height,
+                gl::NEAREST,
+                gl::CLAMP_TO_EDGE,
+                gl::BGRA,
+                None,
+            );
+            unsafe {
+                gl::DeleteTextures(1, &self.game);
+                gl::UseProgram(self.prog);
+                gl::Uniform2f(self.u_src, width as f32, height as f32);
+            }
+            self.game = game;
+            self.frame = size;
         }
         unsafe {
             gl::BindTexture(gl::TEXTURE_2D, self.game);
@@ -185,8 +220,8 @@ impl GamePass {
                 0,
                 0,
                 0,
-                SRC_W as i32,
-                SRC_H as i32,
+                width as i32,
+                height as i32,
                 gl::BGRA,
                 gl::UNSIGNED_BYTE,
                 xrgb8888.as_ptr() as *const std::ffi::c_void,
@@ -195,9 +230,12 @@ impl GamePass {
     }
 
     pub fn draw(&self, quad: &Quad) {
-        let src = match self.effect {
-            ScreenEffect::Grid => whole_scale_source(self.src, self.fbo_scale),
-            _ => self.src,
+        let src = match self.frame != (SRC_W, SRC_H) {
+            true => WHOLE_TEXTURE,
+            false => match self.effect {
+                ScreenEffect::Grid => whole_scale_source(self.src, self.fbo_scale),
+                _ => self.src,
+            },
         };
         self.draw_source(self.game, quad, src);
     }
@@ -244,6 +282,29 @@ impl GamePass {
     }
 }
 
+fn content_rect(
+    base: (f32, f32, f32, f32),
+    frame: (u32, u32),
+    stretch: bool,
+) -> (f32, f32, f32, f32) {
+    if frame == (SRC_W, SRC_H) {
+        return base;
+    }
+    let (x, y, w, h) = base;
+    let scale = (w / SRC_W as f32).min(h / SRC_H as f32);
+    let shown_w = match stretch {
+        true => SRC_W as f32,
+        false => frame.0 as f32,
+    } * scale;
+    let shown_h = frame.1 as f32 * scale;
+    (
+        x + (w - shown_w) / 2.0,
+        y + (h - shown_h) / 2.0,
+        shown_w,
+        shown_h,
+    )
+}
+
 fn whole_scale_source(src: [f32; 4], fbo: [f32; 2]) -> [f32; 4] {
     let (x, w) = whole_scale(src[0], src[2], SRC_W as f32, OUT_W as f32 * fbo[0]);
     let (y, h) = whole_scale(src[1], src[3], SRC_H as f32, OUT_H as f32 * fbo[1]);
@@ -268,5 +329,37 @@ impl Drop for GamePass {
             gl::DeleteTextures(1, &self.paper);
             gl::DeleteProgram(self.prog);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_game_boy_frame_is_three_times_its_size_on_a_720_panel() {
+        let rect = content_rect((0.0, 0.0, 720.0, 480.0), (160, 144), false);
+        assert_eq!(rect, (120.0, 24.0, 480.0, 432.0));
+    }
+
+    #[test]
+    fn stretching_a_game_boy_frame_uses_the_gba_width() {
+        let rect = content_rect((0.0, 0.0, 720.0, 480.0), (160, 144), true);
+        assert_eq!(rect, (0.0, 24.0, 720.0, 432.0));
+    }
+
+    #[test]
+    fn a_game_boy_frame_keeps_the_old_size_on_a_640_panel() {
+        let rect = content_rect((0.0, 27.0, 640.0, 427.0), (160, 144), false);
+        assert!((rect.0 - 106.666_67).abs() < 0.01, "{rect:?}");
+        assert!((rect.1 - 48.5).abs() < 0.01, "{rect:?}");
+        assert!((rect.2 - 426.666_66).abs() < 0.01, "{rect:?}");
+        assert!((rect.3 - 384.0).abs() < 0.01, "{rect:?}");
+    }
+
+    #[test]
+    fn a_gba_frame_uses_the_whole_game_rect() {
+        let base = (0.0, 27.0, 640.0, 427.0);
+        assert_eq!(content_rect(base, (SRC_W, SRC_H), false), base);
     }
 }

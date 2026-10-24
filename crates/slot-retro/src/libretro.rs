@@ -24,6 +24,8 @@ enum PixelFormat {
 
 struct Host {
     video: Vec<u8>,
+    video_w: u32,
+    video_h: u32,
     format: PixelFormat,
     audio: Vec<i16>,
     inputs: [u16; 2],
@@ -318,16 +320,20 @@ unsafe extern "C" fn video_refresh(
         return;
     }
     with_host(|h| {
-        let cols = width.min(GBA_W) as usize;
-        let rows = height.min(GBA_H) as usize;
-        let ox = (GBA_W as usize - cols) / 2;
-        let oy = (GBA_H as usize - rows) / 2;
-        if cols != GBA_W as usize || rows != GBA_H as usize {
-            h.video.fill(0);
+        let cols = width as usize;
+        let rows = height as usize;
+        if cols == 0 || rows == 0 {
+            return;
         }
+        let len = cols * rows * 4;
+        if h.video.len() != len {
+            h.video.resize(len, 0);
+        }
+        h.video_w = width;
+        h.video_h = height;
         for y in 0..rows {
             let src = (data as *const u8).add(y * pitch);
-            let row = ((y + oy) * GBA_W as usize + ox) * 4;
+            let row = y * cols * 4;
             match h.format {
                 PixelFormat::Xrgb8888 => {
                     ptr::copy_nonoverlapping(src, h.video.as_mut_ptr().add(row), cols * 4);
@@ -471,6 +477,8 @@ impl LibretroCore {
         }
         let mut host = Box::new(Host {
             video: vec![0; VIDEO_BYTES],
+            video_w: GBA_W,
+            video_h: GBA_H,
             format: PixelFormat::Xrgb8888,
             audio: Vec::new(),
             inputs: [0; 2],
@@ -620,6 +628,10 @@ impl RetroCore for LibretroCore {
         &self.host.video
     }
 
+    fn video_size(&self) -> (u32, u32) {
+        (self.host.video_w, self.host.video_h)
+    }
+
     fn take_audio(&mut self) -> Vec<i16> {
         std::mem::take(&mut self.host.audio)
     }
@@ -717,6 +729,8 @@ mod tests {
     fn host_with(options: HashMap<String, CString>, options_dirty: bool) -> Box<Host> {
         Box::new(Host {
             video: vec![0; VIDEO_BYTES],
+            video_w: GBA_W,
+            video_h: GBA_H,
             format: PixelFormat::Xrgb8888,
             audio: Vec::new(),
             inputs: [0; 2],
@@ -1595,22 +1609,22 @@ mod tests {
     }
 
     #[test]
-    fn a_small_picture_is_centred_in_the_buffer() {
+    fn a_small_picture_is_kept_at_its_own_size() {
         let mut host = host_with(HashMap::new(), false);
         let _active = Active::bind(&mut host);
         let frame = vec![0xffu8; 160 * 144 * 4];
         unsafe { video_refresh(frame.as_ptr() as *const c_void, 160, 144, 160 * 4) };
 
-        let lit =
-            |x: usize, y: usize| unsafe { with_host(|h| h.video[(y * 240 + x) * 4]) }.unwrap() != 0;
-        assert!(lit(40, 8), "the top left of the picture is not at (40, 8)");
-        assert!(lit(199, 151), "the bottom right is not at (199, 151)");
-        assert!(!lit(39, 8), "the picture starts one column too early");
-        assert!(!lit(40, 7), "the picture starts one row too early");
+        let (video, size) = unsafe {
+            with_host(|h| (h.video.clone(), (h.video_w, h.video_h))).unwrap()
+        };
+        assert_eq!(size, (160, 144));
+        assert_eq!(video.len(), 160 * 144 * 4);
+        assert_eq!(&video[..4], &[0xff; 4]);
     }
 
     #[test]
-    fn the_margin_is_cleared_when_the_picture_shrinks() {
+    fn shrinking_the_picture_shrinks_the_buffer() {
         let mut host = host_with(HashMap::new(), false);
         let _active = Active::bind(&mut host);
         unsafe {
@@ -1619,8 +1633,12 @@ mod tests {
             let small = vec![0x11u8; 160 * 144 * 4];
             video_refresh(small.as_ptr() as *const c_void, 160, 144, 160 * 4);
         }
-        let corner = unsafe { with_host(|h| h.video[0]) }.unwrap();
-        assert_eq!(corner, 0, "the previous picture is still in the margin");
+        let (video, size) = unsafe {
+            with_host(|h| (h.video.clone(), (h.video_w, h.video_h))).unwrap()
+        };
+        assert_eq!(size, (160, 144));
+        assert_eq!(video.len(), 160 * 144 * 4);
+        assert_eq!(video[0], 0x11);
     }
 
     fn gradient(w: usize, h: usize) -> Vec<u8> {
@@ -1701,7 +1719,7 @@ mod tests {
     }
 
     #[test]
-    fn a_duplicate_frame_keeps_a_centred_game_boy_picture_where_it_is() {
+    fn a_duplicate_frame_keeps_a_game_boy_picture_where_it_is() {
         let mut host = host_with(HashMap::new(), false);
         let _active = Active::bind(&mut host);
         let frame = gradient(160, 144);
@@ -1715,10 +1733,10 @@ mod tests {
 
         let kept = unsafe { with_host(|h| h.video.clone()) }.unwrap();
         assert_eq!(kept, drawn, "the picture did not survive two duplicates");
-        let lit = (58 * GBA_W as usize + 140) * 4;
+        let lit = (58 * 160 + 140) * 4;
         assert_eq!(
             &kept[lit..lit + 3],
-            &[100u8, 50, 100 ^ 50],
+            &[140u8, 58, 140 ^ 58],
             "the picture was blanked or moved where a duplicate should have kept it"
         );
     }

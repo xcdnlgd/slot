@@ -126,8 +126,8 @@ pub fn repo_root() -> PathBuf {
 }
 
 pub fn vendored_core() -> Option<PathBuf> {
-    let p = repo_root().join(format!(
-        "vendor/mgba_libretro.{}",
+    let p = repo_root().join("vendor").join(std::env::consts::ARCH).join(format!(
+        "mgba_libretro.{}",
         std::env::consts::DLL_EXTENSION
     ));
     p.exists().then_some(p)

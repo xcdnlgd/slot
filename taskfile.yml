@@ -5,9 +5,14 @@ vars:
     sh: uname -s
   HOST_ARCH:
     sh: uname -m
+  HOST_VENDOR: '{{if eq .HOST_ARCH "arm64"}}aarch64{{else}}{{.HOST_ARCH}}{{end}}'
   DLL_EXT: '{{if eq .HOST_OS "Darwin"}}dylib{{else}}so{{end}}'
-  CORE: vendor/mgba_libretro.{{.DLL_EXT}}
-  GPSP_HOST: vendor/gpsp_libretro.{{.DLL_EXT}}
+  CORE: vendor/{{.HOST_VENDOR}}/mgba_libretro.{{.DLL_EXT}}
+  GPSP_HOST: vendor/{{.HOST_VENDOR}}/gpsp_libretro.{{.DLL_EXT}}
+  DEVICE_VENDOR: aarch64
+  DEVICE_CORE: vendor/{{.DEVICE_VENDOR}}/mgba_libretro.so
+  DEVICE_GPSP: vendor/{{.DEVICE_VENDOR}}/gpsp_libretro.so
+  DEVICE_FSCK: vendor/{{.DEVICE_VENDOR}}/fsck.exfat
   MGBA_COMMIT: e31759b24e7a4e3899285ff720d7b573ac328ae7
   GPSP_COMMIT: 7b2dd37394e2822110cacef321e9bb291a305b77
   EXFATPROGS_VERSION: 1.4.3
@@ -144,10 +149,10 @@ tasks:
             echo "unsupported host $(uname -s)-$(uname -m)" >&2
             exit 1 ;;
         esac
-        mkdir -p vendor
-        curl -fsSL -o vendor/gpsp-host.zip "$url"
-        unzip -o -q vendor/gpsp-host.zip -d vendor
-        rm -f vendor/gpsp-host.zip
+        mkdir -p vendor/{{.HOST_VENDOR}}
+        curl -fsSL -o vendor/{{.HOST_VENDOR}}/gpsp-host.zip "$url"
+        unzip -o -q vendor/{{.HOST_VENDOR}}/gpsp-host.zip -d vendor/{{.HOST_VENDOR}}
+        rm -f vendor/{{.HOST_VENDOR}}/gpsp-host.zip
         file {{.GPSP_HOST}} | grep -q '{{if eq .HOST_OS "Darwin"}}Mach-O{{else}}ELF{{end}}'
         echo "fetched {{.GPSP_HOST}}"
 
@@ -244,32 +249,32 @@ tasks:
   core:device:
     desc: Build the aarch64 linux mgba core for the device bundle, in the box the device build uses
     status:
-      - test -f vendor/mgba_libretro.so
-      - file vendor/mgba_libretro.so | grep -q aarch64
-      - test "$(cat vendor/mgba_libretro.so.meta 2>/dev/null)" = "$(sh cores/mgba/build.sh stamp {{.MGBA_COMMIT}})"
+      - test -f {{.DEVICE_CORE}}
+      - file {{.DEVICE_CORE}} | grep -q aarch64
+      - test "$(cat {{.DEVICE_CORE}}.meta 2>/dev/null)" = "$(sh cores/mgba/build.sh stamp {{.MGBA_COMMIT}})"
     cmds:
       - task: device:sh
         vars:
-          CMD: sh cores/mgba/build.sh build {{.MGBA_COMMIT}} target-device/mgba vendor/mgba_libretro.so
-      - file vendor/mgba_libretro.so | grep -q aarch64
-      - 'echo "built vendor/mgba_libretro.so"'
+          CMD: sh cores/mgba/build.sh build {{.MGBA_COMMIT}} target-device/mgba {{.DEVICE_CORE}}
+      - file {{.DEVICE_CORE}} | grep -q aarch64
+      - 'echo "built {{.DEVICE_CORE}}"'
 
   core:gpsp:
     desc: >-
       Build the aarch64 linux gpSP core from its pinned source archive, which ships beside it
       as its GPL-2.0 section 3(a) corresponding source
     status:
-      - test -f vendor/gpsp_libretro.so
-      - file vendor/gpsp_libretro.so | grep -q aarch64
+      - test -f {{.DEVICE_GPSP}}
+      - file {{.DEVICE_GPSP}} | grep -q aarch64
       - test -f vendor/gpsp-src.tar.gz
       - test "$(cat vendor/gpsp-src.sha 2>/dev/null)" = "{{.GPSP_COMMIT}}"
-      - test "$(cat vendor/gpsp_libretro.so.meta 2>/dev/null)" = "$(sh cores/gpsp/build.sh stamp {{.GPSP_COMMIT}})"
+      - test "$(cat {{.DEVICE_GPSP}}.meta 2>/dev/null)" = "$(sh cores/gpsp/build.sh stamp {{.GPSP_COMMIT}})"
       - test "$(cat vendor/gpsp-src.meta 2>/dev/null)" = "$(sh cores/gpsp/build.sh stamp {{.GPSP_COMMIT}})"
     cmds:
       - |
         set -euo pipefail
-        mkdir -p vendor
-        rm -f vendor/gpsp_libretro.so vendor/gpsp_libretro.so.meta \
+        mkdir -p vendor/{{.DEVICE_VENDOR}}
+        rm -f {{.DEVICE_GPSP}} {{.DEVICE_GPSP}}.meta \
               vendor/gpsp-src.tar.gz vendor/gpsp-src.sha vendor/gpsp-src.meta
         curl -fsSL -o vendor/gpsp-src.tar.gz \
           "https://github.com/libretro/gpsp/archive/{{.GPSP_COMMIT}}.tar.gz"
@@ -278,17 +283,17 @@ tasks:
         vars:
           CMD: >-
             sh cores/gpsp/build.sh build {{.GPSP_COMMIT}} vendor/gpsp-src.tar.gz
-            target-device/gpsp vendor/gpsp_libretro.so
-      - file vendor/gpsp_libretro.so | grep -q aarch64
+            target-device/gpsp {{.DEVICE_GPSP}}
+      - file {{.DEVICE_GPSP}} | grep -q aarch64
       - echo "{{.GPSP_COMMIT}}" > vendor/gpsp-src.sha
-      - cp vendor/gpsp_libretro.so.meta vendor/gpsp-src.meta
-      - 'echo "built vendor/gpsp_libretro.so from vendor/gpsp-src.tar.gz @ {{.GPSP_COMMIT}}"'
+      - cp {{.DEVICE_GPSP}}.meta vendor/gpsp-src.meta
+      - 'echo "built {{.DEVICE_GPSP}} from vendor/gpsp-src.tar.gz @ {{.GPSP_COMMIT}}"'
 
   core:gpsp:update:
     desc: Refetch gpSP's source archive and rebuild the core from it, even if the set is current
     cmds:
       - >-
-        rm -f vendor/gpsp_libretro.so vendor/gpsp_libretro.so.meta vendor/gpsp-src.tar.gz
+        rm -f {{.DEVICE_GPSP}} {{.DEVICE_GPSP}}.meta vendor/gpsp-src.tar.gz
         vendor/gpsp-src.sha vendor/gpsp-src.meta
       - task: core:gpsp
 
@@ -303,13 +308,13 @@ tasks:
       Build a static aarch64 fsck.exfat from the pinned exfatprogs release, whose archive ships
       beside it as its GPL-2.0 corresponding source
     status:
-      - test -f vendor/fsck.exfat
+      - test -f {{.DEVICE_FSCK}}
       - test -f vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz
     cmds:
       - |
         set -euo pipefail
-        mkdir -p vendor
-        rm -f vendor/fsck.exfat vendor/exfatprogs-*.tar.gz
+        mkdir -p vendor/{{.DEVICE_VENDOR}}
+        rm -f {{.DEVICE_FSCK}} vendor/exfatprogs-*.tar.gz
         curl -fsSL -o vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz \
           "https://github.com/exfatprogs/exfatprogs/releases/download/{{.EXFATPROGS_VERSION}}/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz"
         echo "{{.EXFATPROGS_SHA256}}  vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz" | shasum -a 256 -c -
@@ -320,9 +325,9 @@ tasks:
             tar -xzf vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz -C target-device/exfatprogs;
             cd target-device/exfatprogs/exfatprogs-{{.EXFATPROGS_VERSION}};
             ./configure --quiet; make -s -j4 LDFLAGS=-all-static;
-            strip fsck/fsck.exfat; cp fsck/fsck.exfat ../../../vendor/fsck.exfat
-      - file vendor/fsck.exfat | grep -q 'aarch64.*statically linked'
-      - 'echo "built vendor/fsck.exfat from exfatprogs {{.EXFATPROGS_VERSION}}"'
+            strip fsck/fsck.exfat; cp fsck/fsck.exfat ../../../{{.DEVICE_FSCK}}
+      - file {{.DEVICE_FSCK}} | grep -q 'aarch64.*statically linked'
+      - 'echo "built {{.DEVICE_FSCK}} from exfatprogs {{.EXFATPROGS_VERSION}}"'
 
   device:sh:
     desc: Run CMD on the box the device build wants, fetching one if this is not it
@@ -395,11 +400,11 @@ tasks:
       - cp -R card/System/* {{.OUT}}/System/
       - cp -R card/Shaders/* {{.OUT}}/Shaders/
       - for d in Bezels Labels Wallpapers; do cp card/$d/README.txt {{.OUT}}/$d/; done
-      - file vendor/mgba_libretro.so | grep -q aarch64
-      - file vendor/gpsp_libretro.so | grep -q aarch64
-      - cp vendor/mgba_libretro.so {{.OUT}}/System/
-      - cp vendor/gpsp_libretro.so {{.OUT}}/System/
-      - cp vendor/fsck.exfat {{.OUT}}/System/
+      - file {{.DEVICE_CORE}} | grep -q aarch64
+      - file {{.DEVICE_GPSP}} | grep -q aarch64
+      - cp {{.DEVICE_CORE}} {{.OUT}}/System/
+      - cp {{.DEVICE_GPSP}} {{.OUT}}/System/
+      - cp {{.DEVICE_FSCK}} {{.OUT}}/System/
       - cp -r licenses {{.OUT}}/System/licenses
       - cp vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz {{.OUT}}/System/licenses/
       - |
@@ -412,8 +417,8 @@ tasks:
         done
       - |
         set -euo pipefail
-        commit="$(grep '^commit=' vendor/mgba_libretro.so.meta | cut -d= -f2)"
-        cp vendor/mgba_libretro.so.meta "{{.OUT}}/System/licenses/mgba-${commit}.meta"
+        commit="$(grep '^commit=' {{.DEVICE_CORE}}.meta | cut -d= -f2)"
+        cp {{.DEVICE_CORE}}.meta "{{.OUT}}/System/licenses/mgba-${commit}.meta"
         for p in cores/mgba/*.patch; do
           cp "$p" "{{.OUT}}/System/licenses/mgba-$(basename "$p")"
         done
@@ -447,13 +452,13 @@ tasks:
       ADB: 'adb{{if .SERIAL}} -s {{.SERIAL}}{{end}}'
     cmds:
       - "{{.ADB}} wait-for-device"
-      - file vendor/mgba_libretro.so | grep -q aarch64
-      - file vendor/gpsp_libretro.so | grep -q aarch64
+      - file {{.DEVICE_CORE}} | grep -q aarch64
+      - file {{.DEVICE_GPSP}} | grep -q aarch64
       - "{{.ADB}} push target-device/device/slot '{{.SD}}/System/slot'"
       - for f in card/System/*; do {{.ADB}} push "$f" '{{.SD}}/System/'; done
-      - "{{.ADB}} push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'"
-      - "{{.ADB}} push vendor/gpsp_libretro.so '{{.SD}}/System/gpsp_libretro.so'"
-      - "{{.ADB}} push vendor/fsck.exfat '{{.SD}}/System/fsck.exfat'"
+      - "{{.ADB}} push {{.DEVICE_CORE}} '{{.SD}}/System/mgba_libretro.so'"
+      - "{{.ADB}} push {{.DEVICE_GPSP}} '{{.SD}}/System/gpsp_libretro.so'"
+      - "{{.ADB}} push {{.DEVICE_FSCK}} '{{.SD}}/System/fsck.exfat'"
       - "{{.ADB}} push licenses '{{.SD}}/System/'"
       - "{{.ADB}} push vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz '{{.SD}}/System/licenses/'"
       - |
@@ -466,8 +471,8 @@ tasks:
         done
       - |
         set -euo pipefail
-        commit="$(grep '^commit=' vendor/mgba_libretro.so.meta | cut -d= -f2)"
-        {{.ADB}} push vendor/mgba_libretro.so.meta "{{.SD}}/System/licenses/mgba-${commit}.meta"
+        commit="$(grep '^commit=' {{.DEVICE_CORE}}.meta | cut -d= -f2)"
+        {{.ADB}} push {{.DEVICE_CORE}}.meta "{{.SD}}/System/licenses/mgba-${commit}.meta"
         for p in cores/mgba/*.patch; do
           {{.ADB}} push "$p" "{{.SD}}/System/licenses/mgba-$(basename "$p")"
         done
