@@ -1,8 +1,8 @@
 use slot_gfx::{Canvas, Draw, TexId, OUT_H};
-use slot_store::{BLUE_LIGHT_MAX, BRIGHTNESS_MAX, VOLUME_MAX};
+use slot_store::{BLUE_LIGHT_MAX, BRIGHTNESS_MAX, DIM_MAX, SUNLIGHT_MAX, VOLUME_MAX};
 
 use crate::icon::icon_box;
-use crate::toast::toast_rect;
+use crate::toast::{toast_band, toast_lines, toast_rect, toast_rect_lines};
 use crate::{Badge, Icon, Toast};
 
 pub type Millis = u64;
@@ -56,6 +56,7 @@ pub enum HudKind {
     BlueLight,
     Volume,
     Rewind,
+    Sunlight,
 }
 
 impl HudKind {
@@ -69,15 +70,17 @@ impl HudKind {
             HudKind::Volume if value == 0 => Icon::VolumeZero,
             HudKind::Volume => Icon::Volume,
             HudKind::Rewind => Icon::Rewind,
+            HudKind::Sunlight => Icon::Sunlight,
         }
     }
 
     fn max(self) -> u8 {
         match self {
-            HudKind::Brightness => BRIGHTNESS_MAX,
+            HudKind::Brightness => BRIGHTNESS_MAX + DIM_MAX,
             HudKind::BlueLight => BLUE_LIGHT_MAX,
             HudKind::Volume => VOLUME_MAX,
             HudKind::Rewind => 100,
+            HudKind::Sunlight => SUNLIGHT_MAX,
         }
     }
 }
@@ -150,6 +153,7 @@ pub struct Hud {
     headphones: bool,
     ff: FfState,
     said: Option<(Toast, Millis)>,
+    said_lines: usize,
     named_toast: Option<(TexId, u32, u32)>,
     alarm: Option<Millis>,
     alarm_toast: Option<Toast>,
@@ -172,8 +176,17 @@ impl Hud {
         self.toasts = toasts;
     }
 
+    pub fn toast_tex(&self, toast: Toast) -> Option<TexId> {
+        self.toasts.get(toast.index()).copied()
+    }
+
     pub fn toast(&mut self, toast: Toast, now: Millis) {
+        self.toast_saying(toast, &toast.text(), now);
+    }
+
+    pub fn toast_saying(&mut self, toast: Toast, said: &str, now: Millis) {
         self.said = Some((toast, now));
+        self.said_lines = toast_lines(toast, said);
         self.named_toast = None;
     }
 
@@ -181,6 +194,7 @@ impl Hud {
     /// the selected external shader's name.
     pub fn toast_named(&mut self, toast: Toast, tex: TexId, w: u32, h: u32, now: Millis) {
         self.said = Some((toast, now));
+        self.said_lines = 1;
         self.named_toast = Some((tex, w, h));
     }
 
@@ -275,7 +289,10 @@ impl Hud {
                 x: 0.0,
                 y: 0.0,
                 w: canvas.w,
-                h: PLATE_H,
+                h: match toast > 0.0 {
+                    true => toast_band(self.said_lines),
+                    false => PLATE_H,
+                },
                 colour: faded(PLATE, alpha.max(toast)),
             });
             if toast > 0.0 {
@@ -380,8 +397,8 @@ impl Hud {
                 let Some(tex) = self.toasts.get(said.index()).copied() else {
                     return;
                 };
-                let (x, y, w, h) = toast_rect(canvas, said);
-                (tex, x, y, w as f32, h as f32)
+                let (x, y, w, h) = toast_rect_lines(canvas, said, self.said_lines);
+                (tex, x, y, w, h)
             }
         };
         out.push(Draw::Tex {

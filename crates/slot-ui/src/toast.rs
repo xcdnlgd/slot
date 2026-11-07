@@ -10,10 +10,13 @@ use crate::{CartFace, QuickRow};
 pub enum Toast {
     StateSaved,
     StateLoaded,
+    GameReset,
     ShotCaptured,
     ShotFailed,
     NeedsGpsp,
+    NeedsMgba,
     NoLink,
+    NoWifi,
     LinkEnded,
     PeerEnded,
     BiosMismatch,
@@ -24,24 +27,30 @@ pub enum Toast {
     ShaderGrid,
     ShaderDot,
     ShaderSimpletex,
+    ShaderShimmerless,
     ShaderExternal,
     CardUnwritable,
     CardRepair,
     CardRepairCharge,
     CardRepaired,
     CardRepairFailed,
+    Forgotten,
+    Collection,
     Palette(GbColors),
     Duplicate(QuickRow),
 }
 
 impl Toast {
-    const FIXED: [Toast; 22] = [
+    const FIXED: [Toast; 28] = [
         Toast::StateSaved,
         Toast::StateLoaded,
+        Toast::GameReset,
         Toast::ShotCaptured,
         Toast::ShotFailed,
         Toast::NeedsGpsp,
+        Toast::NeedsMgba,
         Toast::NoLink,
+        Toast::NoWifi,
         Toast::LinkEnded,
         Toast::PeerEnded,
         Toast::BiosMismatch,
@@ -52,12 +61,15 @@ impl Toast {
         Toast::ShaderGrid,
         Toast::ShaderDot,
         Toast::ShaderSimpletex,
+        Toast::ShaderShimmerless,
         Toast::ShaderExternal,
         Toast::CardUnwritable,
         Toast::CardRepair,
         Toast::CardRepairCharge,
         Toast::CardRepaired,
         Toast::CardRepairFailed,
+        Toast::Forgotten,
+        Toast::Collection,
     ];
 
     pub fn all() -> Vec<Toast> {
@@ -126,12 +138,15 @@ impl Toast {
         match self {
             Toast::StateSaved => "State Saved",
             Toast::StateLoaded => "State Loaded",
+            Toast::GameReset => "Game Reset",
             Toast::ShotCaptured => "Screenshot Captured",
             Toast::ShotFailed => "Screenshot Failed",
             Toast::NeedsGpsp => "Please switch to gpSP",
+            Toast::NeedsMgba => "Please switch to mGBA",
             Toast::NoLink => "No link support",
+            Toast::NoWifi => "This device has no Wi-Fi",
             Toast::LinkEnded => "Link ended",
-            Toast::PeerEnded => "Link was ended",
+            Toast::PeerEnded => "Other player ended the link",
             Toast::BiosMismatch => "BIOS does not match",
             Toast::ColourOn => "Correction On",
             Toast::ColourOff => "Correction Off",
@@ -140,11 +155,14 @@ impl Toast {
             Toast::ShaderGrid => "Shader: Grid",
             Toast::ShaderDot => "Shader: Dot",
             Toast::ShaderSimpletex => "Shader: Simpletex",
+            Toast::ShaderShimmerless => "Shader: Shimmerless",
             Toast::ShaderExternal => "Shader: External",
             Toast::CardUnwritable => "Can't write to SD card",
             Toast::CardRepair | Toast::CardRepairCharge => "Can't write to SD card",
             Toast::CardRepaired => "SD card repaired",
             Toast::CardRepairFailed => "Card repair failed",
+            Toast::Forgotten => "Network forgotten",
+            Toast::Collection => "Collection",
             Toast::Palette(p) => p.label(),
             Toast::Duplicate(_) => "",
         }
@@ -158,11 +176,10 @@ fn bound_rows() -> impl Iterator<Item = QuickRow> {
 const REPAIR_HOLD_MS: crate::hud::Millis = 6_000;
 const WARNING_HOLD_MS: crate::hud::Millis = 4_000;
 
-const TOAST_W: u32 = 240;
-const TOAST_H: u32 = 22;
-const TOAST_PX: f32 = 16.0;
+const TOAST_W: u32 = 400;
+const TOAST_H: u32 = 28;
+const TOAST_PX: f32 = 20.0;
 const TOAST_MIN_PX: f32 = 12.0;
-const WARNING_W: u32 = 400;
 const ICON_GAP: u32 = 8;
 const TOAST_ICON_PX: f32 = 22.0;
 
@@ -177,7 +194,7 @@ struct Setting {
     h: u32,
     px: f32,
     min_px: f32,
-    middle: f32,
+    lines: usize,
 }
 
 fn setting(toast: Toast) -> Setting {
@@ -187,31 +204,62 @@ fn setting(toast: Toast) -> Setting {
             h: ALARM_H,
             px: ALARM_PX,
             min_px: ALARM_PX,
-            middle: OUT_H as f32 / 2.0,
+            lines: 1,
         },
         false => Setting {
-            w: match toast.icon() {
-                Some(_) => WARNING_W,
-                None => TOAST_W,
-            },
+            w: TOAST_W,
             h: TOAST_H,
             px: TOAST_PX,
             min_px: TOAST_MIN_PX,
-            middle: PLATE_H / 2.0,
+            lines: 2,
         },
     }
 }
 
+fn layout_for(font: &fontdue::Font, toast: Toast, said: &str) -> text::Layout {
+    let s = setting(toast);
+    let room = toast
+        .icon()
+        .and_then(|i| icon_coverage(i, TOAST_ICON_PX))
+        .map_or(s.w, |(_, iw, _)| s.w.saturating_sub(iw + ICON_GAP));
+    match s.lines {
+        1 => text::fit(font, said, room as f32, 1, s.px, s.min_px),
+        _ => text::fit_even(font, said, room as f32, s.px, s.min_px),
+    }
+}
+
+pub fn toast_lines(toast: Toast, said: &str) -> usize {
+    text::label_font().map_or(1, |font| layout_for(font, toast, said).lines.len().max(1))
+}
+
+pub fn toast_band(lines: usize) -> f32 {
+    PLATE_H + TOAST_H as f32 * lines.saturating_sub(1) as f32
+}
+
 pub fn toast_rect(canvas: Canvas, toast: Toast) -> (f32, f32, f32, f32) {
-    let (w, h) = toast_box(toast);
+    toast_rect_lines(canvas, toast, toast_lines(toast, &toast.text()))
+}
+
+pub fn toast_rect_lines(canvas: Canvas, toast: Toast, lines: usize) -> (f32, f32, f32, f32) {
+    let (w, h) = toast_box_lines(toast, lines);
     let (w, h) = (w as f32, h as f32);
-    let middle = setting(toast).middle;
+    let middle = match toast.alarm() {
+        true => OUT_H as f32 / 2.0,
+        false => toast_band(lines) / 2.0,
+    };
     (canvas.centred(w), middle - h / 2.0, w, h)
 }
 
 pub fn toast_box(toast: Toast) -> (u32, u32) {
+    toast_box_lines(toast, toast_lines(toast, &toast.text()))
+}
+
+fn toast_box_lines(toast: Toast, lines: usize) -> (u32, u32) {
     let s = setting(toast);
-    (s.w + 2 * HALO_PX, s.h + detail_h(toast) + 2 * HALO_PX)
+    (
+        s.w + 2 * HALO_PX,
+        s.h * lines as u32 + detail_h(toast) + 2 * HALO_PX,
+    )
 }
 
 fn detail_h(toast: Toast) -> u32 {
@@ -222,82 +270,11 @@ fn detail_h(toast: Toast) -> u32 {
 }
 
 pub fn toast_face(toast: Toast) -> CartFace {
-    toast_text_face(
-        &toast.text(),
-        toast.icon(),
-        toast.detail(),
-        setting(toast),
-        detail_h(toast),
-    )
+    toast_face_text(toast, &toast.text())
 }
 
-/// A toast for an external shader, whose name is only known from the card.
+/// One-off banner for a shader chosen by name, wide enough for the filename.
 pub fn shader_toast_face(name: &str, width: u32) -> CartFace {
-    let text = format!("Shader: {name}");
-    let text = match text::label_font() {
-        Some(font) => clip_to_width(
-            font,
-            &text,
-            width as f32,
-            TOAST_PX,
-            text::tracking_for(TOAST_PX),
-        ),
-        None => text,
-    };
-    toast_text_face(
-        &text,
-        None,
-        None,
-        Setting {
-            w: width,
-            h: TOAST_H,
-            px: TOAST_PX,
-            min_px: TOAST_MIN_PX,
-            middle: PLATE_H / 2.0,
-        },
-        0,
-    )
-}
-
-/// Cut a single line to `max_w`, keeping the ellipsis inside the measured
-/// width. The toast keeps its normal 16 px type rather than shrinking first.
-fn clip_to_width(
-    font: &fontdue::Font,
-    text: &str,
-    max_w: f32,
-    px: f32,
-    tracking: f32,
-) -> String {
-    let upper = text.to_uppercase();
-    let width = |text: &str| text::line_width(font, text, px, tracking);
-    if width(&upper) <= max_w {
-        return upper;
-    }
-    let ellipsis = "…";
-    let ellipsis_w = width(ellipsis);
-    let mut cut = String::new();
-    for ch in upper.chars() {
-        let mut trial = cut.clone();
-        trial.push(ch);
-        if width(&trial) + ellipsis_w > max_w {
-            break;
-        }
-        cut = trial;
-    }
-    while cut.ends_with(' ') {
-        cut.pop();
-    }
-    cut.push_str(ellipsis);
-    cut
-}
-
-fn toast_text_face(
-    text: &str,
-    icon: Option<Icon>,
-    detail: Option<&str>,
-    s: Setting,
-    detail_h: u32,
-) -> CartFace {
     let Some(font) = text::label_font() else {
         return CartFace {
             rgba: Vec::new(),
@@ -305,23 +282,36 @@ fn toast_text_face(
             h: 0,
         };
     };
-    let icon_face = icon.and_then(|i| icon_coverage(i, TOAST_ICON_PX));
-    let room = icon_face
-        .as_ref()
-        .map_or(s.w, |(_, iw, _)| s.w.saturating_sub(iw + ICON_GAP));
-    let layout = text::fit(font, text, room as f32, 1, s.px, s.min_px);
-    let (mut cov, tinted) = match icon_face {
-        Some(icon) => beside(icon, font, &layout, &s),
-        None => (text::coverage(s.w, s.h, &layout), 0..0),
+    let said = format!("Shader: {name}");
+    let layout = text::fit(font, &said, width as f32, 1, TOAST_PX, TOAST_MIN_PX);
+    let cov = text::coverage(width, TOAST_H, &layout);
+    haloed(&cov, width, TOAST_H, HUD_INK)
+}
+
+pub fn toast_face_text(toast: Toast, said: &str) -> CartFace {
+    let Some(font) = text::label_font() else {
+        return CartFace {
+            rgba: Vec::new(),
+            w: 0,
+            h: 0,
+        };
     };
-    if let Some(detail) = detail {
+    let s = setting(toast);
+    let icon = toast.icon().and_then(|i| icon_coverage(i, TOAST_ICON_PX));
+    let layout = layout_for(font, toast, said);
+    let tall = s.h * layout.lines.len().max(1) as u32;
+    let (mut cov, tinted) = match icon {
+        Some(icon) => beside(icon, font, &layout, s.w, tall),
+        None => (text::coverage(s.w, tall, &layout), 0..0),
+    };
+    if let Some(detail) = toast.detail() {
         let layout = text::fit(font, detail, s.w as f32, 1, DETAIL_PX, DETAIL_PX);
         cov.extend(text::coverage(s.w, DETAIL_H, &layout));
     }
-    if tinted.is_empty() || icon != Some(Icon::Alert) {
-        return haloed(&cov, s.w, s.h + detail_h, HUD_INK);
+    if tinted.is_empty() || toast.icon() != Some(Icon::Alert) {
+        return haloed(&cov, s.w, tall + detail_h(toast), HUD_INK);
     }
-    haloed_with(&cov, s.w, s.h + detail_h, |x, _| {
+    haloed_with(&cov, s.w, tall + detail_h(toast), |x, _| {
         match tinted.contains(&(x as u32)) {
             true => WARNING_INK,
             false => HUD_INK,
@@ -333,24 +323,28 @@ fn beside(
     (icon, iw, ih): (Vec<u8>, u32, u32),
     font: &fontdue::Font,
     layout: &text::Layout,
-    s: &Setting,
+    w: u32,
+    h: u32,
 ) -> (Vec<u8>, std::ops::Range<u32>) {
-    let line = layout.lines.first().map_or("", String::as_str);
-    let tw = (text::line_width(font, line, layout.px, layout.tracking).ceil() as u32 + 2)
-        .min(s.w.saturating_sub(iw + ICON_GAP));
-    let words = text::coverage(tw, s.h, layout);
-    let left = s.w.saturating_sub(iw + ICON_GAP + tw) / 2;
-    let mut cov = vec![0u8; (s.w * s.h) as usize];
-    let top = s.h.saturating_sub(ih) / 2;
-    for y in 0..ih.min(s.h) {
+    let set = layout
+        .lines
+        .iter()
+        .map(|l| text::line_width(font, l, layout.px, layout.tracking))
+        .fold(0.0, f32::max);
+    let tw = (set.ceil() as u32 + 2).min(w.saturating_sub(iw + ICON_GAP));
+    let words = text::coverage(tw, h, layout);
+    let left = w.saturating_sub(iw + ICON_GAP + tw) / 2;
+    let mut cov = vec![0u8; (w * h) as usize];
+    let top = h.saturating_sub(ih) / 2;
+    for y in 0..ih.min(h) {
         for x in 0..iw {
-            cov[((top + y) * s.w + left + x) as usize] = icon[(y * iw + x) as usize];
+            cov[((top + y) * w + left + x) as usize] = icon[(y * iw + x) as usize];
         }
     }
     let at = left + iw + ICON_GAP;
-    for y in 0..s.h {
+    for y in 0..h {
         for x in 0..tw {
-            cov[(y * s.w + at + x) as usize] = words[(y * tw + x) as usize];
+            cov[(y * w + at + x) as usize] = words[(y * tw + x) as usize];
         }
     }
     (cov, left..left + iw)
@@ -359,16 +353,6 @@ fn beside(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_long_shader_toast_is_cut_with_an_ellipsis() {
-        let font = text::label_font().expect("label font");
-        let text = format!("Shader: {}", "very-long-name-".repeat(20));
-        let tracking = text::tracking_for(TOAST_PX);
-        let cut = clip_to_width(font, &text, TOAST_W as f32, TOAST_PX, tracking);
-        assert!(cut.ends_with('…'));
-        assert!(text::line_width(font, &cut, TOAST_PX, tracking) <= TOAST_W as f32);
-    }
 
     fn ink_width(toast: Toast) -> u32 {
         let font = text::label_font().expect("label font");
@@ -440,11 +424,7 @@ mod tests {
         let font = text::label_font().expect("label font");
         for t in Toast::all() {
             let s = setting(t);
-            let room = t
-                .icon()
-                .and_then(|i| icon_coverage(i, TOAST_ICON_PX))
-                .map_or(s.w, |(_, iw, _)| s.w - iw - ICON_GAP);
-            let layout = text::fit(font, &t.text(), room as f32, 1, s.px, s.min_px);
+            let layout = layout_for(font, t, &t.text());
             assert_eq!(
                 layout.px,
                 s.px,
@@ -454,7 +434,11 @@ mod tests {
                 layout.px,
                 s.w
             );
-            assert_eq!(layout.lines.len(), 1, "{t:?} wrapped onto a second line");
+            assert!(
+                layout.lines.len() <= s.lines,
+                "{t:?} took {} lines",
+                layout.lines.len()
+            );
             let w = ink_width(t);
             assert!(w <= s.w, "{:?} is {w} px wide in a {} px box", t, s.w);
         }

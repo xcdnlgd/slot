@@ -8,6 +8,13 @@ use crate::art;
 const DEFAULT_PNG: &[u8] = include_bytes!("../../../assets/background_default.png");
 const BEZEL_GB_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb.png");
 const BEZEL_GBC_PNG: &[u8] = include_bytes!("../../../assets/bezel_gbc.png");
+const BEZEL_GB_FIT_3X2_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb_fit_3x2.png");
+const BEZEL_GBC_FIT_3X2_PNG: &[u8] = include_bytes!("../../../assets/bezel_gbc_fit_3x2.png");
+const BEZEL_GB_INTEGER_4X3_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb_integer_4x3.png");
+const BEZEL_GBC_INTEGER_4X3_PNG: &[u8] =
+    include_bytes!("../../../assets/bezel_gbc_integer_4x3.png");
+const BEZEL_GB_FIT_4X3_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb_fit_4x3.png");
+const BEZEL_GBC_FIT_4X3_PNG: &[u8] = include_bytes!("../../../assets/bezel_gbc_fit_4x3.png");
 const BLUR_PNG: &[u8] = include_bytes!("../../../assets/background_default_blur.png");
 
 const SCRIM: f32 = 0.62;
@@ -22,20 +29,33 @@ pub fn bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
 
 pub fn game_bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
     let (src, sw, sh) = art::decode(path)?;
-    panel_bezel(&src, (sw, sh), (w, h), None, false)
+    panel_bezel(&src, (sw, sh), (w, h), false)
 }
 
-pub fn default_game_bezel_face(colour: bool, w: u32, h: u32) -> Option<Vec<u8>> {
-    let png = if colour { BEZEL_GBC_PNG } else { BEZEL_GB_PNG };
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BezelArt {
+    Default,
+    Fit3x2,
+    Integer4x3,
+    Fit4x3,
+}
+
+pub fn default_game_bezel_face(colour: bool, kind: BezelArt, w: u32, h: u32) -> Option<Vec<u8>> {
+    let png = match (kind, colour) {
+        (BezelArt::Default, false) => BEZEL_GB_PNG,
+        (BezelArt::Default, true) => BEZEL_GBC_PNG,
+        (BezelArt::Fit3x2, false) => BEZEL_GB_FIT_3X2_PNG,
+        (BezelArt::Fit3x2, true) => BEZEL_GBC_FIT_3X2_PNG,
+        (BezelArt::Integer4x3, false) => BEZEL_GB_INTEGER_4X3_PNG,
+        (BezelArt::Integer4x3, true) => BEZEL_GBC_INTEGER_4X3_PNG,
+        (BezelArt::Fit4x3, false) => BEZEL_GB_FIT_4X3_PNG,
+        (BezelArt::Fit4x3, true) => BEZEL_GBC_FIT_4X3_PNG,
+    };
     let (src, sw, sh) = art::decode_png_bytes(png)?;
-    let (gw, gh) = slot_gfx::game_rect_size((w, h), (160, 144), false);
-    panel_bezel(
-        &src,
-        (sw, sh),
-        (w, h),
-        Some((gw.round() as u32, gh.round() as u32)),
-        true,
-    )
+    match kind {
+        BezelArt::Default => panel_bezel(&src, (sw, sh), (w, h), true),
+        _ => art::cover_rgba(&src, sw, sh, w, h),
+    }
 }
 
 const BEZEL_GRAIN_ROWS: usize = 10;
@@ -44,16 +64,12 @@ fn panel_bezel(
     src: &[u8],
     (sw, sh): (u32, u32),
     (w, h): (u32, u32),
-    game_h: Option<(u32, u32)>,
     extend: bool,
 ) -> Option<Vec<u8>> {
     if !slot_gfx::framed((w, h)) || sw * 3 == sh * 4 {
         return art::cover_rgba(src, sw, sh, w, h);
     }
-    let game_h = game_h
-        .map(|(_, h)| h)
-        .unwrap_or(slot_gfx::screen_rect((w, h)).3 as u32)
-        .min(h) as usize;
+    let game_h = slot_gfx::screen_rect((w, h)).3 as usize;
     let inner = art::cover_rgba(src, sw, sh, w, game_h as u32)?;
     let (h, row) = (h as usize, w as usize * 4);
     let gap = h - game_h;

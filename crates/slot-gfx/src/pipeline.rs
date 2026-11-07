@@ -1,5 +1,5 @@
 use crate::lcd3x::ScreenEffect;
-use crate::power::{screen_brightness, screen_rect_above, screen_scale};
+use crate::power::{screen_brightness, screen_rect_above};
 use crate::quad::Quad;
 use crate::shaders::{GAME_FRAG, RECT_VERT};
 use crate::surface::{GfxError, OUT_H, OUT_W};
@@ -9,6 +9,8 @@ pub const SRC_W: u32 = OUT_W / SCALE;
 pub const SRC_H: u32 = OUT_H / SCALE;
 
 pub const WHOLE_TEXTURE: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
+
+const FULL: [f32; 4] = [0.0, 0.0, OUT_W as f32, OUT_H as f32];
 
 pub struct GamePass {
     prog: gl::types::GLuint,
@@ -34,6 +36,9 @@ pub struct GamePass {
     /// Pixels kept for the carousel footer. The picture scales in the space above them.
     bottom: f32,
     src: [f32; 4],
+    layout: [f32; 4],
+    full_layout: bool,
+    target: [f32; 2],
     frame: (u32, u32),
 }
 
@@ -90,6 +95,9 @@ impl GamePass {
             fills: false,
             bottom: 0.0,
             src: WHOLE_TEXTURE,
+            layout: FULL,
+            full_layout: true,
+            target: [OUT_W as f32, OUT_H as f32],
             frame: (SRC_W, SRC_H),
         })
     }
@@ -102,28 +110,25 @@ impl GamePass {
         self.bottom = px.max(0.0);
     }
 
-    pub fn frame_size(&self) -> (u32, u32) {
-        self.frame
-    }
-
-    pub fn stretch(&self) -> bool {
-        self.src != WHOLE_TEXTURE
-    }
-
-    pub fn screen_scale(&self) -> f32 {
-        screen_scale(self.power)
-    }
-
-    fn placed(&self) -> (f32, f32, f32, f32) {
+    pub fn frame(&self) -> (f32, f32, f32, f32) {
         let foot = self.bottom;
-        let base = match self.fills {
+        match self.fills {
             true => (0.0, 0.0, OUT_W as f32, OUT_H as f32 - foot),
             false => screen_rect_above(self.power, foot),
-        };
-        if self.frame == (SRC_W, SRC_H) {
-            return base;
         }
-        content_rect(base, self.frame, self.src != WHOLE_TEXTURE)
+    }
+
+    pub fn set_layout(&mut self, rect: [f32; 4]) {
+        self.layout = rect;
+        self.full_layout = rect == FULL;
+    }
+
+    pub fn set_layout_full(&mut self, full: bool) {
+        self.full_layout = full;
+    }
+
+    pub fn set_target(&mut self, width: f32, height: f32) {
+        self.target = [width, height];
     }
 
     pub fn set_fills_frame(&mut self, on: bool) {
@@ -191,11 +196,7 @@ impl GamePass {
 
     pub fn upload_sized(&mut self, xrgb8888: &[u8], size: (u32, u32)) {
         let (width, height) = size;
-        if width == 0 || height == 0 {
-            return;
-        }
-        let len = (width * height * 4) as usize;
-        if xrgb8888.len() < len {
+        if width == 0 || height == 0 || xrgb8888.len() < (width * height * 4) as usize {
             return;
         }
         if size != self.frame {
@@ -232,50 +233,24 @@ impl GamePass {
         }
     }
 
-    pub fn draw(&self, quad: &Quad) {
-        let src = match self.frame != (SRC_W, SRC_H) {
-            true => WHOLE_TEXTURE,
-            false => match self.effect {
-                ScreenEffect::Grid => whole_scale_source(self.src, self.fbo_scale),
-                _ => self.src,
-            },
-        };
-        self.draw_source(self.game, quad, src);
+    pub fn frame_size(&self) -> (u32, u32) {
+        self.frame
     }
 
-    /// Draw the whole frame into an game-rect-sized target. No panel geometry
-    /// is involved: the caller owns the target framebuffer and viewport.
-    pub fn draw_full(&self, quad: &Quad, size: (u32, u32)) {
-        let (w, h) = (size.0 as f32, size.1 as f32);
-        unsafe {
-            gl::UseProgram(self.prog);
-            gl::Uniform4f(self.u_rect, 0.0, 0.0, w, h);
-            gl::Uniform4f(self.u_uv, 0.0, 0.0, 1.0, 1.0);
-            gl::Uniform2f(self.u_target, w, h);
-            gl::Uniform1f(self.u_bright, self.brightness());
-            gl::Uniform1f(self.u_mode, self.effect.mode());
-            gl::Uniform1f(self.u_paper_size, self.paper_size);
-            gl::Uniform2f(
-                self.u_fbo,
-                w / OUT_W as f32,
-                h / OUT_H as f32,
-            );
-            gl::Uniform2f(self.u_origin, 0.0, 0.0);
-            gl::Uniform4f(self.u_pic, 0.0, 0.0, 1.0, 1.0);
-            gl::ActiveTexture(gl::TEXTURE1);
-            gl::BindTexture(gl::TEXTURE_2D, self.paper);
-            gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_2D, self.game);
-        }
-        quad.draw();
+    pub fn draw(&self, quad: &Quad) {
+        let src = match self.effect {
+            ScreenEffect::Grid if self.full_layout => whole_scale_source(self.src, self.fbo_scale),
+            _ => self.src,
+        };
+        self.draw_source(self.game, quad, src, self.layout);
     }
 
     pub fn draw_still(&self, tex: gl::types::GLuint, quad: &Quad) {
-        self.draw_source(tex, quad, WHOLE_TEXTURE);
+        self.draw_source(tex, quad, self.src, self.layout);
     }
 
-    fn draw_source(&self, tex: gl::types::GLuint, quad: &Quad, src: [f32; 4]) {
-        let (x, y, w, h) = self.placed();
+    fn draw_source(&self, tex: gl::types::GLuint, quad: &Quad, src: [f32; 4], layout: [f32; 4]) {
+        let (x, y, w, h) = placed_in(self.frame(), layout);
         let bright = if self.fills {
             1.0
         } else {
@@ -289,6 +264,7 @@ impl GamePass {
         }
         unsafe {
             gl::UseProgram(self.prog);
+            gl::Uniform2f(self.u_target, self.target[0], self.target[1]);
             gl::Uniform4f(self.u_rect, x, y, w, h);
             gl::Uniform4f(self.u_uv, src[0], src[1], src[2], src[3]);
             gl::Uniform1f(self.u_bright, bright);
@@ -312,27 +288,11 @@ impl GamePass {
     }
 }
 
-fn content_rect(
-    base: (f32, f32, f32, f32),
-    frame: (u32, u32),
-    stretch: bool,
-) -> (f32, f32, f32, f32) {
-    if frame == (SRC_W, SRC_H) {
-        return base;
-    }
-    let (x, y, w, h) = base;
-    let scale = (w / SRC_W as f32).min(h / SRC_H as f32);
-    let shown_w = match stretch {
-        true => SRC_W as f32,
-        false => frame.0 as f32,
-    } * scale;
-    let shown_h = frame.1 as f32 * scale;
-    (
-        x + (w - shown_w) / 2.0,
-        y + (h - shown_h) / 2.0,
-        shown_w,
-        shown_h,
-    )
+fn placed_in(frame: (f32, f32, f32, f32), layout: [f32; 4]) -> (f32, f32, f32, f32) {
+    let (x, y, w, h) = frame;
+    let [lx, ly, lw, lh] = layout;
+    let (sx, sy) = (lw / OUT_W as f32, lh / OUT_H as f32);
+    (lx + x * sx, ly + y * sy, w * sx, h * sy)
 }
 
 fn whole_scale_source(src: [f32; 4], fbo: [f32; 2]) -> [f32; 4] {
@@ -359,37 +319,5 @@ impl Drop for GamePass {
             gl::DeleteTextures(1, &self.paper);
             gl::DeleteProgram(self.prog);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_game_boy_frame_is_three_times_its_size_on_a_720_panel() {
-        let rect = content_rect((0.0, 0.0, 720.0, 480.0), (160, 144), false);
-        assert_eq!(rect, (120.0, 24.0, 480.0, 432.0));
-    }
-
-    #[test]
-    fn stretching_a_game_boy_frame_uses_the_gba_width() {
-        let rect = content_rect((0.0, 0.0, 720.0, 480.0), (160, 144), true);
-        assert_eq!(rect, (0.0, 24.0, 720.0, 432.0));
-    }
-
-    #[test]
-    fn a_game_boy_frame_keeps_the_old_size_on_a_640_panel() {
-        let rect = content_rect((0.0, 27.0, 640.0, 427.0), (160, 144), false);
-        assert!((rect.0 - 106.666_67).abs() < 0.01, "{rect:?}");
-        assert!((rect.1 - 48.5).abs() < 0.01, "{rect:?}");
-        assert!((rect.2 - 426.666_66).abs() < 0.01, "{rect:?}");
-        assert!((rect.3 - 384.0).abs() < 0.01, "{rect:?}");
-    }
-
-    #[test]
-    fn a_gba_frame_uses_the_whole_game_rect() {
-        let base = (0.0, 27.0, 640.0, 427.0);
-        assert_eq!(content_rect(base, (SRC_W, SRC_H), false), base);
     }
 }

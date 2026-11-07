@@ -8,11 +8,9 @@ use slot::app::{App, Phase, EJECT_S, INSERT_S, SEATED_AT};
 use slot::audio::Sfx;
 use slot::emu::{EmuHandle, Speed};
 use slot::session::Session;
-use slot::video_mode::{video_mode_for, VideoMode, VIDEO_MODE_FILE};
-use slot_gfx::WHOLE_TEXTURE;
 use slot_input::{Action, Btn, RawEvent};
 use slot_retro::ButtonMask;
-use slot_store::{write_slot_state, Cart, Core, Platform, SlotState};
+use slot_store::{write_slot_state, Cart, Core, Platform, Scale, SlotState};
 use slot_ui::{
     board_at, board_in, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Canvas, Draw,
     Icon, Placed, TexId, BOARD_W, CART_H, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE,
@@ -151,6 +149,7 @@ fn the_game_does_not_draw_during_the_insert() {
 #[test]
 fn the_reveal_waits_for_the_power_on_to_finish() {
     let d = common::tmp_root_with_carts(&["Emerald"]);
+    common::clocked(d.path());
     let mut a = App::boot(d.path());
     a.apply(Action::Insert);
     a.on_core_ready();
@@ -189,7 +188,6 @@ fn a_resumed_cart_makes_no_sound() {
         &SlotState {
             cart: Some("Emerald".into()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )
@@ -492,11 +490,7 @@ fn the_switch_changes_the_name_on_the_band_and_says_nothing() {
         assert_eq!(a.toast(), None, "{btn:?} put a banner up over the carts");
     }
     a.update(5.0);
-    assert_eq!(
-        a.shelf_platform_name(),
-        Some("Game Boy"),
-        "the name faded"
-    );
+    assert_eq!(a.shelf_platform_name(), Some("Game Boy"), "the name faded");
 }
 
 #[test]
@@ -591,7 +585,11 @@ fn a_cart_in_flight_is_not_also_left_standing_on_the_shelf() {
                     && w <= CART_W as f32 + 0.01
                     && (w / h - CART_W as f32 / CART_H as f32).abs() < 0.05
             }
-            Draw::Game | Draw::Shot { .. } | Draw::Capture => false,
+            Draw::Game
+            | Draw::Shot { .. }
+            | Draw::Capture
+            | Draw::Quad { .. }
+            | Draw::Paper { .. } => false,
         })
         .count();
     assert_eq!(
@@ -789,33 +787,34 @@ fn let_it_hop(app: &mut App) {
     app.update(0.25);
 }
 
-fn start_on(mut pressed: App, mut untouched: App) -> (Option<Core>, f32, bool) {
-    fake_picker_faces(&mut pressed);
-    fake_picker_faces(&mut untouched);
-    pressed.apply(Action::GbaDown(Btn::Start));
-    let_it_hop(&mut pressed);
-    let_it_hop(&mut untouched);
-    let moved = frame(&pressed) != frame(&untouched);
-    (pressed.core_picker(), pressed.shelf_shake(), moved)
-}
-
 #[test]
-fn start_opens_no_picker_on_a_game_boy_cart() {
-    let (_d, gb) = on_shelf_gb(&["Tetris", "Zzz"]);
-    let (_twin, gb_twin) = on_shelf_gb(&["Tetris", "Zzz"]);
-    let (picker, shake, moved) = start_on(gb, gb_twin);
-    assert_eq!(picker, None, "a Game Boy cart opened the GBA picker");
+fn choosing_mgba_on_a_game_boy_cart_writes_it() {
+    let (d, mut app) = on_shelf_gb(&["Tetris", "Zzz"]);
+    fake_picker_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Start));
+    let_it_hop(&mut app);
+    app.apply(Action::GbaDown(Btn::Right));
     assert_eq!(
-        shake, 0.0,
-        "START on a Game Boy cart was answered with a refusal shake"
+        app.core_picker(),
+        Some(Core::Gambatte),
+        "right from Gambatte wrapped round"
     );
-    assert!(!moved, "START changed what the shelf draws");
+    let_it_hop(&mut app);
+    app.apply(Action::GbaDown(Btn::Left));
+    assert_eq!(app.core_picker(), Some(Core::Mgba));
+    app.apply(Action::GbaDown(Btn::A));
+    assert_eq!(
+        slot_store::core_for_platform(d.path(), "Tetris", Platform::Gb, Core::Gambatte),
+        Core::Mgba
+    );
 
-    let (_d, gba) = on_shelf(&["Emerald", "Zzz"]);
-    let (_twin, gba_twin) = on_shelf(&["Emerald", "Zzz"]);
-    let (picker, _, moved) = start_on(gba, gba_twin);
-    assert_eq!(picker, Some(Core::Mgba), "START stopped opening the picker");
-    assert!(moved, "the picker opened and the shelf drew the same frame");
+    let_it_close(&mut app);
+    app.apply(Action::GbaDown(Btn::Start));
+    assert_eq!(
+        app.core_picker(),
+        Some(Core::Mgba),
+        "the chip should start in the core the cart already uses"
+    );
 }
 
 #[test]
@@ -849,9 +848,12 @@ fn choosing_a_core_writes_it_and_closes() {
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::A));
 
-    assert_eq!(slot_store::core_for(d.path(), "Emerald"), Core::Gpsp);
     assert_eq!(
-        slot_store::core_for(d.path(), "Zzz"),
+        slot_store::core_for_platform(d.path(), "Emerald", Platform::Gba, Core::Mgba),
+        Core::Gpsp
+    );
+    assert_eq!(
+        slot_store::core_for_platform(d.path(), "Zzz", Platform::Gba, Core::Mgba),
         Core::Mgba,
         "the choice landed on a cart the shelf was not on"
     );
@@ -874,7 +876,7 @@ fn b_closes_the_picker_without_writing() {
 
     assert_eq!(app.core_picker(), None);
     assert_eq!(
-        slot_store::core_for(d.path(), "Emerald"),
+        slot_store::core_for_platform(d.path(), "Emerald", Platform::Gba, Core::Mgba),
         Core::Mgba,
         "backing out of the picker still changed the cart"
     );
@@ -958,7 +960,10 @@ fn a_mid_hop_writes_where_the_chip_is_heading() {
     app.apply(Action::GbaDown(Btn::Right));
     app.update(0.05);
     app.apply(Action::GbaDown(Btn::A));
-    assert_eq!(slot_store::core_for(d.path(), "Emerald"), Core::Gpsp);
+    assert_eq!(
+        slot_store::core_for_platform(d.path(), "Emerald", Platform::Gba, Core::Mgba),
+        Core::Gpsp
+    );
 }
 
 #[test]
@@ -998,7 +1003,7 @@ fn presses_during_the_close_and_keys_the_picker_does_not_use_do_nothing() {
     let_it_close(&mut app);
     assert_eq!(app.core_picker(), None);
     assert_eq!(
-        slot_store::core_for(d.path(), "Emerald"),
+        slot_store::core_for_platform(d.path(), "Emerald", Platform::Gba, Core::Mgba),
         Core::Mgba,
         "a press during the close wrote a core"
     );
@@ -1012,7 +1017,10 @@ fn shutting_the_lid_closes_the_picker_without_writing() {
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::LidClose);
     assert_eq!(app.core_picker(), None, "the picker survived the lid");
-    assert_eq!(slot_store::core_for(d.path(), "Emerald"), Core::Mgba);
+    assert_eq!(
+        slot_store::core_for_platform(d.path(), "Emerald", Platform::Gba, Core::Mgba),
+        Core::Mgba
+    );
 }
 
 #[test]
@@ -1096,7 +1104,7 @@ fn fake_boot_faces(app: &mut App) -> PickerFaces {
         legend: [(id(908), 60), (id(909), 90), (id(910), 80)],
     };
     app.set_core_part_faces(f.sockets.to_vec(), f.chips.to_vec(), f.blank, f.shadow);
-    app.set_core_legend_faces(f.legend.to_vec());
+    app.set_core_legend_faces(f.legend.to_vec(), f.legend.to_vec());
     f
 }
 
@@ -1343,24 +1351,72 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     let [cancel, swap, choose] = f.legend;
     let at = |tex| tex_at(&out, tex).expect("a legend hint is missing").1;
     let seen = |w: u32| (w - HINT_EDGE) as f32;
-    let y = OUT_H as f32 - MOUTH_H * 2.0;
-    assert_eq!(at(cancel.0), [234.0, y, cancel.1 as f32, MOUTH_H]);
+    let y = OUT_H as f32 - MOUTH_H;
+    assert_eq!((at(cancel.0)[1], at(swap.0)[1], at(choose.0)[1]), (y, y, y));
     assert_eq!(
-        at(swap.0)[0] + seen(swap.1) / 2.0,
-        OUT_W as f32 / 2.0,
-        "Swap is off the panel's centre"
+        at(choose.0)[0] + seen(choose.1),
+        OUT_W as f32 - at(cancel.0)[0],
+        "Cancel and Choose do not hold the footer's two edges"
     );
-    assert_eq!(
-        at(choose.0)[0],
-        at(swap.0)[0] + seen(swap.1) + 24.0,
-        "Choose is not beside Swap"
+    let left = at(swap.0)[0] - at(cancel.0)[0] - seen(cancel.1);
+    let right = at(choose.0)[0] - at(swap.0)[0] - seen(swap.1);
+    assert!(
+        (left - right).abs() <= 1.0,
+        "Swap is not spread: {left} {right}"
     );
-    assert_eq!(
-        at(cancel.0)[0] + seen(cancel.1) + 24.0,
-        at(swap.0)[0],
-        "Cancel is not beside Swap"
+}
+
+#[test]
+fn the_core_picker_plugs_the_slot_over_the_footer() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let f = fake_picker_faces(&mut app);
+    let plugged = TexId::from_raw(950);
+    app.set_plugged_face(plugged);
+    let plug = |out: &[Draw]| {
+        out.iter().find_map(|d| match *d {
+            Draw::Part { tex, alpha, .. } if tex == plugged => Some(alpha),
+            _ => None,
+        })
+    };
+    assert_eq!(plug(&frame(&app)), None, "the shelf's slot is plugged");
+    app.apply(Action::GbaDown(Btn::Start));
+    let_it_open(&mut app);
+    let out = frame(&app);
+    assert_eq!(plug(&out), Some(1.0), "the open picker left the slot empty");
+    let (legend, _) = tex_at(&out, f.legend[0].0).expect("no legend");
+    let strip = out
+        .iter()
+        .position(|d| matches!(*d, Draw::Part { tex, .. } if tex == plugged));
+    assert!(strip < Some(legend), "the plug is drawn over the legends");
+}
+
+#[test]
+fn a_game_boy_cart_seats_the_pak_chip_in_the_pak_footprints() {
+    let (_d, mut app) = on_shelf_gb(&["Tetris", "Zzz"]);
+    let f = fake_picker_faces(&mut app);
+    let id = TexId::from_raw;
+    let (gb_sockets, gb_chips) = ([id(920), id(921), id(922)], [id(923), id(924), id(925)]);
+    app.set_core_gb_part_faces(gb_sockets.to_vec(), gb_chips.to_vec(), id(926));
+    app.apply(Action::GbaDown(Btn::Start));
+    let_it_open(&mut app);
+    let out = frame(&app);
+
+    let gambatte = Core::Gambatte.index();
+    let mgba = Core::Mgba.index();
+    let (_, chip, _) = turned_at(&out, gb_chips[gambatte]).expect("the pak chip is not seated");
+    let (_, right) = tex_at(&out, gb_sockets[gambatte]).expect("the Gambatte footprint is missing");
+    let (_, left) = tex_at(&out, gb_sockets[mgba]).expect("the mGBA footprint is missing");
+    assert!(left[0] < right[0], "mGBA must keep the left footprint");
+    assert!(
+        (chip[0] - right[0]).abs() < 4.0 && (chip[1] - right[1]).abs() < 4.0,
+        "the chip at {chip:?} is not over the Gambatte footprint at {right:?}"
     );
-    assert_eq!((at(swap.0)[1], at(choose.0)[1]), (y, y));
+    for t in f.sockets.iter().chain(f.chips.iter()) {
+        assert!(
+            tex_at(&out, *t).is_none() && turned_at(&out, *t).is_none(),
+            "a GBA part drew on the pak board"
+        );
+    }
 }
 
 #[test]
@@ -1828,51 +1884,36 @@ fn session_playing(root: &Path) -> Session {
     s
 }
 
-const GB_WINDOW: [f32; 4] = [40.0 / 240.0, 0.0, 160.0 / 240.0, 1.0];
-
 fn pad(s: &Session) -> u16 {
     s.emu().expect("no core in the slot").input().0
 }
 
 #[test]
-fn l_and_r_change_the_mode_on_a_game_boy_cart_and_not_on_a_gba_one() {
+fn l_and_r_cycle_scale_on_a_game_boy_cart_and_not_on_a_gba_one() {
     let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
     let mut s = session_playing(d.path());
-    assert_eq!(
-        s.app().source_rect(),
-        WHOLE_TEXTURE,
-        "it did not open actual size"
-    );
+    assert_eq!(s.app().resolved_scale(Platform::Gb), Scale::Integer);
 
-    s.feed([RawEvent::Down(Btn::L1)], 100);
-    assert_eq!(
-        s.app().source_rect(),
-        GB_WINDOW,
-        "L did not stretch the picture"
-    );
-    assert_eq!(pad(&s) & ButtonMask::L, 0, "L reached the game as well");
-    s.feed([RawEvent::Up(Btn::L1)], 120);
-
-    s.feed([RawEvent::Down(Btn::R1)], 200);
-    assert_eq!(
-        s.app().source_rect(),
-        WHOLE_TEXTURE,
-        "R did not give it back"
-    );
+    s.feed([RawEvent::Down(Btn::R1)], 100);
+    assert_eq!(s.app().resolved_scale(Platform::Gb), Scale::Fit);
     assert_eq!(pad(&s) & ButtonMask::R, 0, "R reached the game as well");
-    s.feed([RawEvent::Up(Btn::R1)], 220);
+    s.feed([RawEvent::Up(Btn::R1)], 120);
+
+    s.feed([RawEvent::Down(Btn::L1)], 200);
+    assert_eq!(s.app().resolved_scale(Platform::Gb), Scale::Integer);
+    assert_eq!(pad(&s) & ButtonMask::L, 0, "L reached the game as well");
+    s.feed([RawEvent::Up(Btn::L1)], 220);
 
     let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
     let mut s = session_playing(d.path());
+    let scale = s.app().resolved_scale(Platform::Gba);
     s.feed([RawEvent::Down(Btn::L1)], 100);
     assert_ne!(pad(&s) & ButtonMask::L, 0, "the GBA lost its own L");
-    s.feed([RawEvent::Down(Btn::R1)], 120);
+    assert_eq!(s.app().resolved_scale(Platform::Gba), scale);
+    s.feed([RawEvent::Up(Btn::L1)], 120);
+    s.feed([RawEvent::Down(Btn::R1)], 200);
     assert_ne!(pad(&s) & ButtonMask::R, 0, "the GBA lost its own R");
-    assert_eq!(
-        s.app().source_rect(),
-        WHOLE_TEXTURE,
-        "a GBA picture moved when its shoulders were pressed"
-    );
+    assert_eq!(s.app().resolved_scale(Platform::Gba), scale);
 }
 
 #[test]
@@ -1936,48 +1977,6 @@ fn a_shoulder_still_held_when_the_cart_seats_never_reaches_a_game_boy_core() {
             }
         );
     }
-}
-
-#[test]
-fn the_picture_mode_is_remembered_per_cart() {
-    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
-    let mut s = session_playing(d.path());
-    s.feed([RawEvent::Down(Btn::L1)], 100);
-    s.feed([RawEvent::Up(Btn::L1)], 120);
-    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Stretch);
-    assert_eq!(
-        video_mode_for(d.path(), "Zzz"),
-        VideoMode::Actual,
-        "the press was recorded against another cart as well"
-    );
-    drop(s);
-
-    let mut s = session_playing(d.path());
-    assert_eq!(
-        s.app().source_rect(),
-        GB_WINDOW,
-        "the cart did not come back stretched"
-    );
-    s.feed([RawEvent::Down(Btn::R1)], 100);
-    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
-    assert_eq!(s.app().source_rect(), WHOLE_TEXTURE);
-}
-
-#[test]
-fn a_cart_with_no_line_reads_as_actual_size() {
-    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
-    assert!(
-        !d.path().join(VIDEO_MODE_FILE).exists(),
-        "the fixture already wrote the file"
-    );
-    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
-
-    let s = session_playing(d.path());
-    assert_eq!(
-        s.app().source_rect(),
-        WHOLE_TEXTURE,
-        "a cart with no line did not open at actual size"
-    );
 }
 
 #[test]
@@ -2143,10 +2142,10 @@ fn a_game_boy_color_game_keeps_its_own_colour_and_shader() {
     );
     assert_eq!(
         (saved.shader_gb, saved.shader_gbc),
-        (Shader::Simpletex, Shader::Off),
+        (Shader::Simpletex, Shader::Shimmerless),
         "a Game Boy Color game's shader shortcut did not land on GBC alone"
     );
-    assert_eq!(s.app().screen_shader(), Shader::Off);
+    assert_eq!(s.app().screen_shader(), Shader::Shimmerless);
 }
 
 #[test]
@@ -2215,6 +2214,56 @@ fn a_letter_jump_shows_the_letter_in_the_slot_and_fades_like_the_shelf_name() {
 }
 
 #[test]
+fn a_jumped_to_letter_is_set_at_the_titles_size_on_its_baseline() {
+    let mut a = app_with_carts(&["Alpha", "Bravo"]);
+    let face = slot_ui::TexId::from_raw(77);
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaUp(Btn::Down));
+    a.set_shelf_platform_face(face, 20);
+    a.update(1.0 / 60.0);
+    a.update(0.5);
+    let mut out = Vec::new();
+    a.draw(&mut out);
+    let Some((y, h)) = out.iter().find_map(|d| match *d {
+        Draw::Tex { tex, y, h, .. } if tex == face => Some((y, h)),
+        _ => None,
+    }) else {
+        panic!("the letter never showed");
+    };
+    assert_eq!(h, slot_ui::TITLE_LINE_H as f32);
+    assert_eq!(
+        y + h,
+        slot_ui::slot_name_y() + slot_ui::HINT_H as f32,
+        "the letter left the title's baseline"
+    );
+}
+
+#[test]
+fn the_shelf_name_is_set_at_the_letters_size_on_its_baseline() {
+    let mut a = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gb, "Tetris")]);
+    let face = slot_ui::TexId::from_raw(77);
+    tap(&mut a, Btn::R1);
+    assert_eq!(a.slot_text().as_deref(), Some("Game Boy"));
+    a.set_shelf_platform_face(face, 120);
+    a.update(1.0 / 60.0);
+    a.update(0.5);
+    let mut out = Vec::new();
+    a.draw(&mut out);
+    let Some((y, h)) = out.iter().find_map(|d| match *d {
+        Draw::Tex { tex, y, h, .. } if tex == face => Some((y, h)),
+        _ => None,
+    }) else {
+        panic!("the shelf name never showed");
+    };
+    assert_eq!(h, slot_ui::TITLE_LINE_H as f32);
+    assert_eq!(
+        y + h,
+        slot_ui::slot_name_y() + slot_ui::HINT_H as f32,
+        "the shelf name left the title's baseline"
+    );
+}
+
+#[test]
 fn the_shader_shortcut_steps_the_seated_carts_shader_both_ways_and_names_it() {
     let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
     let (mut s, _motor) = common::session_with_platform(d.path());
@@ -2228,8 +2277,18 @@ fn the_shader_shortcut_steps_the_seated_carts_shader_both_ways_and_names_it() {
         ),
         (
             slot_input::Action::ShaderNext,
+            Shader::Shimmerless,
+            slot_ui::Toast::ShaderShimmerless,
+        ),
+        (
+            slot_input::Action::ShaderNext,
             Shader::Off,
             slot_ui::Toast::ShaderOff,
+        ),
+        (
+            slot_input::Action::ShaderPrev,
+            Shader::Shimmerless,
+            slot_ui::Toast::ShaderShimmerless,
         ),
         (
             slot_input::Action::ShaderPrev,

@@ -18,13 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install zip, cmake and Task
+      - name: Install zip, cmake, Task and Bun
         run: |
           set -eu
           sed -i '/bullseye-security/d' /etc/apt/sources.list
           apt-get -o Acquire::Check-Valid-Until=false update
-          apt-get install -y --no-install-recommends zip cmake
+          apt-get install -y --no-install-recommends zip unzip cmake
           curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /usr/local/bin
+          curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash -s "bun-v1.2.6"
 
       - name: Build the tree
         run: task dist:device OUT="slot-${GITHUB_REF_NAME}"
@@ -36,12 +37,19 @@ jobs:
           file "$out/System/slot" | grep -q aarch64
           file "$out/System/mgba_libretro.so" | grep -q aarch64
           file "$out/System/gpsp_libretro.so" | grep -q aarch64
+          file "$out/System/gambatte_libretro.so" | grep -q aarch64
           test -x "$out/System/slot"
           gpsp_src_sha="$(cat vendor/gpsp-src.sha)"
           test -f "$out/System/licenses/gpsp-${gpsp_src_sha}.tar.gz"
           test -f "$out/System/licenses/gpsp-${gpsp_src_sha}.meta"
           for p in cores/gpsp/*.patch; do
             test -f "$out/System/licenses/gpsp-$(basename "$p")"
+          done
+          gambatte_src_sha="$(cat vendor/gambatte-src.sha)"
+          test -f "$out/System/licenses/gambatte-${gambatte_src_sha}.tar.gz"
+          test -f "$out/System/licenses/gambatte-${gambatte_src_sha}.meta"
+          for p in cores/gambatte/*.patch; do
+            test -f "$out/System/licenses/gambatte-$(basename "$p")"
           done
           mgba_src_commit="$(grep '^commit=' vendor/mgba_libretro.so.meta | cut -d= -f2)"
           test -f "$out/System/licenses/mgba-${mgba_src_commit}.meta"
@@ -71,6 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -95,3 +104,8 @@ jobs:
           test -s notes.md
           gh release create "$GITHUB_REF_NAME" "$ZIP" --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" --notes-file notes.md
+
+      - name: Publish versions.json with the site
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main

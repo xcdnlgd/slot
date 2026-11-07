@@ -1,9 +1,8 @@
 use slot_store::{move_config, read_slot_state};
 
-const FILES: [(&str, &str); 4] = [
+const FILES: [(&str, &str); 3] = [
     ("slot.state", "slot.state"),
     ("selected_core.ini", "selected_core.txt"),
-    ("video_mode.ini", "video_mode.txt"),
     ("cart_shell.ini", "cart_shell.txt"),
 ];
 
@@ -59,7 +58,6 @@ fn ini_settings_in_config_and_labels_become_txt() {
     }
     for f in [
         "Config/selected_core.ini",
-        "Config/video_mode.ini",
         "Config/cart_shell.ini",
         "Labels/cart_shell.ini",
     ] {
@@ -70,7 +68,6 @@ fn ini_settings_in_config_and_labels_become_txt() {
 
     for f in [
         "Config/selected_core.ini",
-        "Config/video_mode.ini",
         "Config/cart_shell.ini",
         "Labels/cart_shell.ini",
     ] {
@@ -111,7 +108,16 @@ fn settings_written_before_the_move_are_still_read_after_it() {
 
     let s = read_slot_state(d.path());
     assert_eq!(
-        (s.cart.as_deref(), s.volume, s.utc_offset_min),
+        (
+            s.cart.as_deref(),
+            s.volume,
+            s.zone.offset_min(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64
+            )
+        ),
         (Some("Emerald"), 40, -240)
     );
 }

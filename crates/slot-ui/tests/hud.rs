@@ -9,7 +9,9 @@ fn bottom_edge(d: &Draw) -> Option<f32> {
         | Draw::Tex { y, h, .. }
         | Draw::Part { y, h, .. }
         | Draw::Turned { y, h, .. } => Some(y + h),
-        Draw::Game | Draw::Shot { .. } | Draw::Capture => None,
+        Draw::Game | Draw::Shot { .. } | Draw::Capture | Draw::Quad { .. } | Draw::Paper { .. } => {
+            None
+        }
     }
 }
 
@@ -39,7 +41,7 @@ fn nothing_shows_until_something_is_adjusted() {
 
 #[test]
 fn volume_reads_against_100_not_the_nine_step_scale() {
-    let full = fill(HudKind::Brightness, 9);
+    let full = fill(HudKind::Brightness, 15);
     assert!(
         fill(HudKind::Volume, 9) < full * 0.2,
         "volume 9 filled the bar, so it is being read against the brightness scale"
@@ -140,23 +142,6 @@ fn both_fast_forward_glyphs_share_one_box() {
     assert_ne!(
         held.rgba, latched.rgba,
         "the two variants rasterise identically"
-    );
-}
-
-#[test]
-fn the_badge_outlives_the_bar_timer_without_a_plate() {
-    let mut h = Hud::new();
-    h.set_ff(FfState::Latched);
-    let mut out = Vec::new();
-    h.draw(Canvas::FRAMED, 60_000, &mut out);
-    assert!(
-        !out.iter()
-            .any(|d| matches!(d, Draw::Rect { w, .. } if *w == OUT_W as f32)),
-        "the badge dragged the full width plate up with it"
-    );
-    assert!(
-        ff_badge(FfState::Latched).is_some(),
-        "the badge itself went away"
     );
 }
 
@@ -262,23 +247,12 @@ fn hushing_drops_the_toast_but_keeps_the_alarm() {
 }
 
 #[test]
-fn a_named_toast_draws_the_runtime_face() {
-    let mut h = Hud::new();
-    h.set_toasts(vec![TexId::from_raw(1)]);
-    h.toast_named(slot_ui::Toast::ShaderExternal, TexId::from_raw(2), 100, 24, 0);
-    let mut out = Vec::new();
-    h.draw(Canvas::FRAMED, 0, &mut out);
-    let drawn = out
-        .iter()
-        .find_map(|d| match *d {
-            Draw::Tex { w, h, tex, .. } if tex == TexId::from_raw(2) => Some((w, h)),
-            _ => None,
-        })
-        .expect("the runtime toast face was not drawn");
-    assert_eq!(drawn, (100.0, 24.0));
-    assert!(
-        !out.iter()
-            .any(|d| matches!(d, Draw::Tex { tex, .. } if *tex == TexId::from_raw(1))),
-        "the generic external toast was drawn instead"
+fn the_sunlight_bar_has_its_own_icon_and_fills_to_ten() {
+    assert_eq!(HudKind::Sunlight.icon(0, false, false), Icon::Sunlight);
+    assert_ne!(Icon::Sunlight.glyph(), Icon::Brightness.glyph());
+    assert_eq!(fill(HudKind::Sunlight, 10), fill(HudKind::Brightness, 15));
+    assert_eq!(
+        fill(HudKind::Sunlight, 5) * 2.0,
+        fill(HudKind::Sunlight, 10)
     );
 }
