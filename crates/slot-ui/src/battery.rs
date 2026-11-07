@@ -43,30 +43,44 @@ pub fn draw_gauge(
         out.push(Draw::Rect { x, y, w, h, colour });
     };
 
-    let cx = x + BOLT_W + BOLT_GAP;
+    // Snap the capsule to whole pixels. The 1.2x design leaves the walls on
+    // fractional coordinates, which makes one edge land a pixel thinner than
+    // the rest depending on where the gauge sits.
+    let bolt_x = x.round();
+    let left = bolt_x + BOLT_W + BOLT_GAP;
+    let top = y.round();
+    let wall = WALL.round().max(1.0);
+    let width = GAUGE_W.round().max(2.0 * wall + 1.0);
+    let height = GAUGE_H.round().max(2.0 * wall + 1.0);
+    let right = left + width;
+    let bottom = top + height;
 
-    rect(cx, y, GAUGE_W, WALL, out);
-    rect(cx, y + GAUGE_H - WALL, GAUGE_W, WALL, out);
-    rect(cx, y, WALL, GAUGE_H, out);
-    rect(cx + GAUGE_W - WALL, y, WALL, GAUGE_H, out);
-    rect(cx + GAUGE_W, y + (GAUGE_H - NUB_H) / 2.0, NUB_W, NUB_H, out);
+    rect(left, top, width, wall, out);
+    rect(left, bottom - wall, width, wall, out);
+    rect(left, top, wall, height, out);
+    rect(right - wall, top, wall, height, out);
 
-    let inner = GAUGE_W - 4.0 * WALL;
+    let nub_w = NUB_W.round().max(1.0);
+    let nub_h = NUB_H.round().max(1.0);
+    let nub_y = (top + (height - nub_h) / 2.0).round();
+    rect(right, nub_y, nub_w, nub_h, out);
+
+    let inner = width - 4.0 * wall;
     let fill = inner * f32::from(b.percent.min(100)) / 100.0;
     if fill > 0.0 {
         rect(
-            cx + 2.0 * WALL,
-            y + 2.0 * WALL,
+            left + 2.0 * wall,
+            top + 2.0 * wall,
             fill,
-            GAUGE_H - 4.0 * WALL,
+            height - 4.0 * wall,
             out,
         );
     }
 
     if let (Charge::Charging, Some(tex)) = (b.charge, bolt) {
         out.push(Draw::Tex {
-            x,
-            y: y + (GAUGE_H - BOLT_H) / 2.0,
+            x: bolt_x,
+            y: (top + (height - BOLT_H) / 2.0).round(),
             w: BOLT_W,
             h: BOLT_H,
             tex,
@@ -75,8 +89,8 @@ pub fn draw_gauge(
     }
 
     if percent.w > 0 {
-        let px = cx + GAUGE_W + NUB_W + GAP;
-        let py = y + (GAUGE_H - HINT_H as f32) / 2.0;
+        let px = right + nub_w + GAP;
+        let py = (top + (height - HINT_H as f32) / 2.0).round();
         out.push(match percent.face {
             Some(tex) => Draw::Tex {
                 x: px,

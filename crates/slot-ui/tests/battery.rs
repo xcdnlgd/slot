@@ -92,14 +92,16 @@ fn the_fill_tracks_the_percent_and_never_leaves_the_capsule() {
                 _ => None,
             })
             .fold(f32::MAX, f32::min);
-        let inner_right = capsule_left + GAUGE_W - 2.0 * WALL;
+        let wall = WALL.round();
+        let width = GAUGE_W.round();
+        let inner_right = capsule_left + width - 2.0 * wall;
         let fill = out.iter().find_map(|d| match *d {
-            Draw::Rect { x, w, .. } if (x - (capsule_left + 2.0 * WALL)).abs() < 0.01 => Some(w),
+            Draw::Rect { x, w, .. } if (x - (capsule_left + 2.0 * wall)).abs() < 0.01 => Some(w),
             _ => None,
         });
         if let Some(w) = fill {
             assert!(
-                capsule_left + 2.0 * WALL + w <= inner_right + 0.01,
+                capsule_left + 2.0 * wall + w <= inner_right + 0.01,
                 "a {percent}% fill burst through the capsule's own wall"
             );
         }
@@ -109,6 +111,42 @@ fn the_fill_tracks_the_percent_and_never_leaves_the_capsule() {
         assert!(
             pair[1] > pair[0],
             "the fill must grow strictly with the percent, got {widths:?}"
+        );
+    }
+}
+
+#[test]
+fn all_four_walls_are_the_same_whole_pixel_width() {
+    let mut out = Vec::new();
+    draw_gauge(
+        24.0,
+        400.0,
+        at(68, Charge::Discharging),
+        percent_face(),
+        None,
+        HUD_INK,
+        &mut out,
+    );
+    let rects: Vec<(f32, f32, f32, f32)> = out
+        .iter()
+        .filter_map(|d| match *d {
+            Draw::Rect { x, y, w, h, .. } => Some((x, y, w, h)),
+            _ => None,
+        })
+        .collect();
+    let [(_, _, _, th), (_, _, _, bh), (_, _, lw, _), (_, _, rw, _), ..] = rects[..] else {
+        panic!("the gauge did not draw four walls: {rects:?}");
+    };
+    assert_eq!(lw, rw, "the left and right walls differ");
+    assert_eq!(th, bh, "the top and bottom walls differ");
+    assert_eq!(lw, th, "the side and end walls differ");
+    assert_eq!(rw, bh, "the right and bottom walls differ");
+    assert!(lw > 0.0);
+    for (x, y, w, h) in &rects[..5] {
+        assert!(
+            [x, y, w, h].iter().all(|v| v.fract() == 0.0),
+            "the gauge drew a fractional edge at {:?}",
+            (x, y, w, h)
         );
     }
 }
