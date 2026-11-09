@@ -37,7 +37,6 @@ fn files_that_are_not_sized_pngs_are_ignored() {
 #[test]
 fn a_bezel_suffix_names_the_scale_it_is_drawn_for() {
     use slot_store::{bezel_scale, Scale};
-    assert_eq!(bezel_scale("Shell_spscreen.png"), Some(Scale::SpFrame));
     assert_eq!(bezel_scale("Shell_integer.png"), Some(Scale::Integer));
     assert_eq!(bezel_scale("Shell_FIT.PNG"), Some(Scale::Fit));
     assert_eq!(bezel_scale("Shell.png"), None);
@@ -51,10 +50,7 @@ fn a_suffixed_bezel_has_a_name_for_each_scale() {
         bezel_for_scale("Shell_fit.png", Scale::Integer).as_deref(),
         Some("Shell_integer.png")
     );
-    assert_eq!(
-        bezel_for_scale("Shell_spscreen.png", Scale::Fit).as_deref(),
-        Some("Shell_fit.png")
-    );
+    assert_eq!(bezel_for_scale("Shell_spscreen.png", Scale::Fit), None);
     assert_eq!(bezel_for_scale("Shell.png", Scale::Fit), None);
 }
 
@@ -64,7 +60,7 @@ fn a_suffixed_bezel_is_labelled_without_its_suffix() {
     assert_eq!(BezelPick::File("Shell_fit.png".into()).label(), "Shell");
     assert_eq!(
         BezelPick::File("Shell_spscreen.png".into()).label(),
-        "Shell"
+        "Shell_spscreen"
     );
     assert_eq!(BezelPick::File("Wood.png".into()).label(), "Wood");
 }

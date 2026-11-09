@@ -1,7 +1,7 @@
 //! A stand-in for the macOS headless GL surface so the same test and example
 //! targets build on other hosts. Creating one fails, and callers skip.
 
-use crate::surface::{GfxError, Surface, OUT_H, OUT_W};
+use crate::surface::{GfxError, Surface, DEFAULT_PANEL_H, DEFAULT_PANEL_W};
 
 pub struct HeadlessSurface;
 
@@ -21,7 +21,7 @@ impl Surface for HeadlessSurface {
     }
 
     fn window_size(&self) -> (u32, u32) {
-        (OUT_W, OUT_H)
+        (DEFAULT_PANEL_W, DEFAULT_PANEL_H)
     }
 
     fn swap(&mut self) -> Result<(), GfxError> {

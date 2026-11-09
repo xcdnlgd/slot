@@ -235,7 +235,6 @@ impl BezelPick {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Scale {
     #[default]
-    SpFrame,
     Integer,
     Fit,
     FullScreen,
@@ -244,7 +243,7 @@ pub enum Scale {
 pub fn bezel_scale(name: &str) -> Option<Scale> {
     let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
     let stem = stem.to_ascii_lowercase();
-    [Scale::SpFrame, Scale::Integer, Scale::Fit]
+    [Scale::Integer, Scale::Fit]
         .into_iter()
         .find(|scale| stem.ends_with(scale.bezel_suffix()))
 }
@@ -259,7 +258,6 @@ pub fn bezel_for_scale(name: &str, scale: Scale) -> Option<String> {
 impl Scale {
     pub fn bezel_suffix(self) -> &'static str {
         match self {
-            Scale::SpFrame => "_spscreen",
             Scale::Integer => "_integer",
             Scale::Fit => "_fit",
             Scale::FullScreen => "_fullscreen",
@@ -268,7 +266,6 @@ impl Scale {
 
     pub fn name(self) -> &'static str {
         match self {
-            Scale::SpFrame => "sp-frame",
             Scale::Integer => "integer",
             Scale::Fit => "fit",
             Scale::FullScreen => "full-screen",
@@ -277,7 +274,6 @@ impl Scale {
 
     pub fn parse(name: &str) -> Option<Scale> {
         match name {
-            "sp-frame" => Some(Scale::SpFrame),
             "integer" => Some(Scale::Integer),
             "fit" => Some(Scale::Fit),
             "full-screen" => Some(Scale::FullScreen),

@@ -633,7 +633,7 @@ mod screen {
     use common::clocked;
     use slot::audio::{AudioSink, StubSink};
     use slot::frontend::Frontend;
-    use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
+    use slot_gfx::{Compositor, HeadlessSurface, PANEL_H, PANEL_W};
     use slot_input::{InputSource, Millis, RawEvent};
     use slot_power::SimPlatform;
     use std::collections::VecDeque;
@@ -670,7 +670,7 @@ mod screen {
                 net,
                 d,
                 Frontend::boot_with(platform, Box::new(StubSink::draining())),
-                (OUT_W, OUT_H),
+                (PANEL_W, PANEL_H),
             )
         }
 
@@ -775,7 +775,7 @@ mod screen {
     }
 
     fn at(px: &[u8], x: usize, y: usize) -> [u8; 3] {
-        let o = (y * OUT_W as usize + x) * 4;
+        let o = (y * PANEL_W as usize + x) * 4;
         [px[o], px[o + 1], px[o + 2]]
     }
 
@@ -925,7 +925,7 @@ mod screen {
         write_slot_state(d.path(), &state).unwrap();
         let platform = Box::new(SimPlatform::at(d.path().to_path_buf()));
         let f = Frontend::boot_with(platform, Box::new(StubSink::draining()));
-        let Some(mut r) = Rig::on(net(&[free_port()]), d, f, (OUT_W, OUT_H)) else {
+        let Some(mut r) = Rig::on(net(&[free_port()]), d, f, (PANEL_W, PANEL_H)) else {
             return;
         };
         r.wait_scene();
@@ -946,7 +946,10 @@ mod screen {
         let ring = sink.ring();
         let platform = Box::new(SimPlatform::at(d.path().to_path_buf()));
         let f = Frontend::boot_with(platform, Box::new(sink));
-        Some((Rig::on(net(&[free_port()]), d, f, (OUT_W, OUT_H))?, ring))
+        Some((
+            Rig::on(net(&[free_port()]), d, f, (PANEL_W, PANEL_H))?,
+            ring,
+        ))
     }
 
     fn drained_loud(ring: &Ring) -> bool {

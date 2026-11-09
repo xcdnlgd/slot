@@ -25,7 +25,7 @@ fn the_message_sits_in_the_middle_of_the_panel_whatever_its_shape() {
         count: Some((TexId::from_raw(2), 117, 19)),
         fraction: 0.25,
     };
-    for canvas in [Canvas::FRAMED, Canvas { w: 640.0, h: 480.0 }] {
+    for canvas in [Canvas::DEFAULT, Canvas { w: 640.0, h: 480.0 }] {
         let mut out = Vec::new();
         screen.draw(canvas, &mut out);
         let (x, y) = stack_middle(&out);

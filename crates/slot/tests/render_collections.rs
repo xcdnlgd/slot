@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use common::{clocked, tmp_root_with_carts};
 use slot::frontend::Frontend;
-use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
+use slot_gfx::{Compositor, HeadlessSurface, PANEL_H, PANEL_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent, FAVORITE_HOLD_MS, SELECT_HOLD_MS};
 use slot_power::SimPlatform;
 
@@ -131,7 +131,7 @@ impl Rig {
         let px = self.c.read_frame();
         if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
             let file = std::fs::File::create(format!("{dir}/collections-{name}.png")).unwrap();
-            let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+            let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
             e.set_color(png::ColorType::Rgba);
             e.set_depth(png::BitDepth::Eight);
             e.write_header().unwrap().write_image_data(&px).unwrap();
@@ -144,7 +144,7 @@ fn changed(a: &[u8], b: &[u8], xs: std::ops::Range<usize>, ys: std::ops::Range<u
     let mut n = 0;
     for y in ys {
         for x in xs.clone() {
-            let o = (y * OUT_W as usize + x) * 4;
+            let o = (y * PANEL_W as usize + x) * 4;
             if (0..3).any(|k| a[o + k].abs_diff(b[o + k]) > 24) {
                 n += 1;
             }
@@ -156,7 +156,7 @@ fn changed(a: &[u8], b: &[u8], xs: std::ops::Range<usize>, ys: std::ops::Range<u
 fn lit_in(px: &[u8], xs: std::ops::Range<usize>, ys: std::ops::Range<usize>) -> usize {
     ys.flat_map(|y| xs.clone().map(move |x| (x, y)))
         .filter(|&(x, y)| {
-            let o = (y * OUT_W as usize + x) * 4;
+            let o = (y * PANEL_W as usize + x) * 4;
             px[o..o + 3].iter().all(|&c| c > 0xb0)
         })
         .count()
@@ -166,7 +166,7 @@ fn lit_centre(px: &[u8], xs: std::ops::Range<usize>, ys: std::ops::Range<usize>)
     let hits: Vec<usize> = ys
         .flat_map(|y| xs.clone().map(move |x| (x, y)))
         .filter(|&(x, y)| {
-            let o = (y * OUT_W as usize + x) * 4;
+            let o = (y * PANEL_W as usize + x) * 4;
             px[o..o + 3].iter().all(|&c| c > 0x80)
         })
         .map(|(x, _)| x)
@@ -184,8 +184,8 @@ fn on_puzzlers(r: &mut Rig) {
     panic!("never reached Puzzlers");
 }
 
-const W: usize = OUT_W as usize;
-const H: usize = OUT_H as usize;
+const W: usize = PANEL_W as usize;
+const H: usize = PANEL_H as usize;
 
 #[test]
 fn ticked_carts_show_no_box() {
@@ -655,7 +655,7 @@ fn a_new_collection_shows_its_name_as_the_cart_drops_in() {
 fn bright_in(px: &[u8], xs: std::ops::Range<usize>, ys: std::ops::Range<usize>) -> usize {
     ys.flat_map(|y| xs.clone().map(move |x| (x, y)))
         .filter(|&(x, y)| {
-            let o = (y * OUT_W as usize + x) * 4;
+            let o = (y * PANEL_W as usize + x) * 4;
             px[o..o + 3].iter().any(|&c| c > 0x70)
         })
         .count()

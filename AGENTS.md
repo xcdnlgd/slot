@@ -100,9 +100,10 @@ Window     host window (host only)
   - `Fill`: stretch to the full panel.
 - `Fill` does not draw a game bezel.
 
-Treat the upstream logical `720x480` layout dimensions as an internal
-compatibility detail, not as physical panel pixels. Convert a layout rect to
-panel pixels before allocating a game framebuffer or compositing it.
+`Canvas`, `GameLayout` and `GameRect` are all in panel pixels. Do not
+introduce a separate logical layout resolution or convert game rectangles
+through one. The only `720x480` default is the simulated host panel used when
+`SLOT_PANEL` is absent; it is a panel choice, not a layout coordinate.
 
 ## Shaders and bezels
 

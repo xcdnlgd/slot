@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use common::{clocked, tmp_root_with_carts};
 use slot::frontend::Frontend;
-use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
+use slot_gfx::{Compositor, HeadlessSurface, PANEL_H, PANEL_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
 use slot_ui::{quick_row_top, QuickRow, MOUTH_H};
@@ -36,7 +36,7 @@ fn run_for(f: &mut Frontend, input: &mut Script, secs: f32) {
 }
 
 fn at(px: &[u8], x: usize, y: usize) -> [u8; 3] {
-    let o = (y * OUT_W as usize + x) * 4;
+    let o = (y * PANEL_W as usize + x) * 4;
     [px[o], px[o + 1], px[o + 2]]
 }
 
@@ -46,7 +46,7 @@ fn composed(f: &mut Frontend, c: &mut Compositor, name: &str) -> Vec<u8> {
     if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
         let path = format!("{dir}/in-game-menu-{name}.png");
         let file = std::fs::File::create(&path).expect("create png");
-        let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+        let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
         e.set_color(png::ColorType::Rgba);
         e.set_depth(png::BitDepth::Eight);
         e.write_header()
@@ -92,7 +92,7 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
     let panel = quick_row_top(QuickRow::Shader, &f.app().in_game_hidden()) as usize - 16;
     let (mut probed, mut lit) = (0, 0);
     for y in (48..panel).step_by(17) {
-        for x in (0..150).chain(570..OUT_W as usize).step_by(13) {
+        for x in (0..150).chain(570..PANEL_W as usize).step_by(13) {
             let (bare, dark) = (at(&screen, x, y), at(&top, x, y));
             assert_eq!(
                 at(&held, x, y),
@@ -141,7 +141,7 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
         let n = rows.len() as u32;
         rows.map(|y| bright(at(&screen, 700, y))).sum::<u32>() / n
     };
-    let mouth = OUT_H as usize - MOUTH_H as usize;
+    let mouth = PANEL_H as usize - MOUTH_H as usize;
     let below = band(mouth - 17..mouth - 2);
     let above = band(panel - 23..panel - 8);
     assert!(
@@ -189,7 +189,7 @@ fn the_brightness_rows_render_on_the_screen_page() {
         let px = composed(&mut f, &mut c, &format!("screen-{row:?}"));
         let top = quick_row_top(row, &hidden) as usize;
         let value = (top..top + 40)
-            .flat_map(|y| (360..OUT_W as usize - 24).map(move |x| (x, y)))
+            .flat_map(|y| (360..PANEL_W as usize - 24).map(move |x| (x, y)))
             .filter(|&(x, y)| bright(at(&px, x, y)) > 600)
             .map(|(x, _)| x)
             .max()
@@ -242,7 +242,7 @@ fn deleting_a_state_asks_with_b_to_keep_and_x_to_delete() {
         "no question in the middle of the screen"
     );
     assert!(
-        lit(0..150, 0..OUT_W as usize) == 0,
+        lit(0..150, 0..PANEL_W as usize) == 0,
         "the game shows through the prompt"
     );
     assert!(lit(420..480, 0..240) > 50, "no Keep legend on the left");

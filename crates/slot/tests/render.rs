@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use slot::thumb;
-use slot_gfx::{lcd3x_mask, Compositor, Draw, HeadlessSurface, OUT_W, SRC_H, SRC_W};
+use slot_gfx::{lcd3x_mask, Compositor, Draw, HeadlessSurface, PANEL_W, SRC_H, SRC_W};
 use slot_retro::{ButtonMask, MockCore, RetroCore};
 use slot_store::{Core, Platform, StateRing};
 use slot_ui::{photo_face, Polaroids, Printed};
@@ -19,7 +19,7 @@ fn compositor() -> Option<(MutexGuard<'static, ()>, HeadlessSurface, Compositor)
 }
 
 fn px(frame: &[u8], x: usize, y: usize) -> [u8; 3] {
-    let o = (y * OUT_W as usize + x) * 4;
+    let o = (y * PANEL_W as usize + x) * 4;
     [frame[o], frame[o + 1], frame[o + 2]]
 }
 

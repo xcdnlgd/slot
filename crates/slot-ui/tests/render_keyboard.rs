@@ -6,7 +6,7 @@ use slot_gfx::{Canvas, Compositor, HeadlessSurface};
 use slot_input::Btn;
 use slot_ui::{
     default_background, draw_empty_slot, draw_keyboard, draw_keyboard_legends, key_rect,
-    keyboard_faces, slot_back, slot_front, Cap, Draw, Keyboard, Layout, Special, OUT_H, OUT_W,
+    keyboard_faces, slot_back, slot_front, Cap, Draw, Keyboard, Layout, Special, PANEL_H, PANEL_W,
     SLOT_H, SLOT_W,
 };
 
@@ -25,7 +25,7 @@ fn shot(px: &[u8], name: &str) {
     };
     let path = format!("{dir}/{name}.png");
     let file = std::fs::File::create(&path).expect("create png");
-    let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+    let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
     e.set_color(png::ColorType::Rgba);
     e.set_depth(png::BitDepth::Eight);
     e.write_header()
@@ -36,8 +36,8 @@ fn shot(px: &[u8], name: &str) {
 }
 
 fn rendered(c: &mut Compositor, kb: &Keyboard) -> Vec<u8> {
-    let canvas = Canvas::FRAMED;
-    let ground = default_background().map(|g| (c.create_texture(OUT_W, OUT_H, g), OUT_W));
+    let canvas = Canvas::DEFAULT;
+    let ground = default_background().map(|g| (c.create_texture(PANEL_W, PANEL_H, g), PANEL_W));
     let back = c.create_texture(SLOT_W, SLOT_H, slot_back());
     let front = c.create_texture(SLOT_W, SLOT_H, slot_front());
     let tex = keyboard_faces(kb, canvas).upload(|f| c.create_texture(f.w, f.h, &f.rgba));
@@ -53,12 +53,12 @@ fn rendered(c: &mut Compositor, kb: &Keyboard) -> Vec<u8> {
 }
 
 fn luma(px: &[u8], x: usize, y: usize) -> f32 {
-    let o = (y * OUT_W as usize + x) * 4;
+    let o = (y * PANEL_W as usize + x) * 4;
     (px[o] as f32 * 0.3 + px[o + 1] as f32 * 0.59 + px[o + 2] as f32 * 0.11) / 255.0
 }
 
 fn tile(px: &[u8], kb: &Keyboard, row: usize, col: usize) -> (f32, usize, usize) {
-    let [x, y, w, h] = key_rect(Canvas::FRAMED, kb.layout(), row, col);
+    let [x, y, w, h] = key_rect(Canvas::DEFAULT, kb.layout(), row, col);
     let (x0, y0, x1, y1) = (x as usize, y as usize, (x + w) as usize, (y + h) as usize);
     let (mut sum, mut light, mut dark, mut n) = (0.0, 0, 0, 0);
     for yy in y0 + 4..y1 - 4 {
@@ -92,7 +92,7 @@ fn the_keyboard_renders_with_icons() {
         "the Done key has no dark icon: {done_ink} dark pixels"
     );
 
-    let [x, y, _, h] = key_rect(Canvas::FRAMED, kb.layout(), 1, 0);
+    let [x, y, _, h] = key_rect(Canvas::DEFAULT, kb.layout(), 1, 0);
     let edge = luma(&px, (x + 5.0) as usize, (y + h / 2.0) as usize);
     assert!(edge < 0.25, "an unchosen key is not a dark tile: {edge}");
     let (q, q_ink, _) = tile(&px, &kb, 1, 0);
@@ -138,7 +138,7 @@ fn lit_in(px: &[u8], [x0, y0, x1, y1]: [usize; 4]) -> usize {
 }
 
 fn help_is_full_screen(px: &[u8]) {
-    let (w, h) = (OUT_W as usize, OUT_H as usize);
+    let (w, h) = (PANEL_W as usize, PANEL_H as usize);
     assert!(lit_in(px, [w / 2 - 80, 0, w / 2 + 80, 40]) > 50, "no title");
     assert!(lit_in(px, [0, h - 40, 140, h]) > 50, "no B Back");
     assert!(
@@ -165,7 +165,7 @@ fn the_keyboard_help_is_a_full_screen_page_and_menu_is_the_right_legend() {
     let mut kb = Keyboard::new(Layout::General, "Password", Some("HOME"), "hunter22");
     let px = rendered(&mut c, &kb);
     shot(&px, "keyboard-legends");
-    let (w, h) = (OUT_W as usize, OUT_H as usize);
+    let (w, h) = (PANEL_W as usize, PANEL_H as usize);
     assert!(lit_in(&px, [w - 140, h - 40, w, h]) > 50, "no right legend");
     kb.press(Btn::Menu);
     let px = rendered(&mut c, &kb);
@@ -186,6 +186,6 @@ fn a_long_password_keeps_the_cursor_on_screen() {
     );
     let px = rendered(&mut c, &kb);
     shot(&px, "keyboard-long");
-    let lit = (100..146).any(|y| luma(&px, OUT_W as usize - 62, y) > 0.9);
+    let lit = (100..146).any(|y| luma(&px, PANEL_W as usize - 62, y) > 0.9);
     assert!(lit, "nothing is drawn at the right end of the field");
 }

@@ -1,4 +1,4 @@
-use slot_ui::{Canvas, Draw, PairScreen, PairSlot, TexId, MOUTH_H, OUT_H, PAIR_QR};
+use slot_ui::{Canvas, Draw, PairScreen, PairSlot, TexId, MOUTH_H, PAIR_QR, PANEL_H};
 
 const PAIR_X: f32 = 40.0;
 const PAIR_GAP: f32 = 32.0;
@@ -23,10 +23,10 @@ fn tex_index(tex: TexId) -> usize {
 
 fn canvases() -> [Canvas; 2] {
     [
-        Canvas::FRAMED,
+        Canvas::DEFAULT,
         Canvas {
             w: 640.0,
-            h: OUT_H as f32,
+            h: PANEL_H as f32,
         },
     ]
 }
@@ -56,7 +56,7 @@ fn lines_without_a_qr_are_centred_on_the_canvas_both_ways() {
         }
         let top = rects[0].1[1];
         let bottom = rects[1].1[1] + rects[1].1[3];
-        let room = OUT_H as f32 - MOUTH_H;
+        let room = PANEL_H as f32 - MOUTH_H;
         assert!(
             (top + bottom - room).abs() <= 1.0,
             "not centred above the footer"
@@ -79,7 +79,7 @@ fn a_single_line_without_a_qr_sits_in_the_middle() {
         .draw(&mut out);
         let [x, y, w, h] = tex_rects(&out)[0].1;
         assert!((x + w / 2.0 - canvas.w / 2.0).abs() <= 0.5);
-        assert!((y + h / 2.0 - (OUT_H as f32 - MOUTH_H) / 2.0).abs() <= 1.0);
+        assert!((y + h / 2.0 - (PANEL_H as f32 - MOUTH_H) / 2.0).abs() <= 1.0);
     }
 }
 

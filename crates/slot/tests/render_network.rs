@@ -5,7 +5,7 @@ mod common;
 use common::{clocked, tmp_root_with_carts};
 use slot::frontend::Frontend;
 use slot::wifi::{Cmd, Fake, Wifi};
-use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
+use slot_gfx::{Compositor, HeadlessSurface, PANEL_H, PANEL_W};
 use slot_input::{Action, Btn};
 use slot_power::SimPlatform;
 use slot_ui::{bars_rect, key_rect, lock_rect, net_row_top, Cap, Layout, QuickRow};
@@ -41,14 +41,14 @@ fn dump(frame: &[u8], name: &str) {
         return;
     };
     let file = std::fs::File::create(format!("{dir}/network-{name}.png")).unwrap();
-    let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+    let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
     e.set_color(png::ColorType::Rgba);
     e.set_depth(png::BitDepth::Eight);
     e.write_header().unwrap().write_image_data(frame).unwrap();
 }
 
 fn px(frame: &[u8], x: usize, y: usize) -> [u8; 3] {
-    let o = (y * OUT_W as usize + x) * 4;
+    let o = (y * PANEL_W as usize + x) * 4;
     [frame[o], frame[o + 1], frame[o + 2]]
 }
 
@@ -344,7 +344,7 @@ fn ink_span(frame: &[u8], top: f32) -> Option<(usize, usize, usize)> {
     let (y0, y1) = (top.max(0.0) as usize, (top + 52.0) as usize);
     let mut hits = (usize::MAX, 0, 0);
     for y in y0..y1 {
-        for x in 0..OUT_W as usize {
+        for x in 0..PANEL_W as usize {
             if bright(px(frame, x, y)) {
                 hits = (hits.0.min(x), hits.1.max(x), hits.2 + 1);
             }
@@ -671,7 +671,7 @@ mod romm_pages {
             let (px, size) = seen(&mut f, &mut c);
             assert_eq!(size, panel);
             shot(&px, size, "connecting");
-            let above = (OUT_H as f32 - slot_ui::MOUTH_H) as u32;
+            let above = (PANEL_H as f32 - slot_ui::MOUTH_H) as u32;
             let [x0, y0, x1, y1] = ink_box(&px, size, above).expect("no text drawn");
             let mid_x = (x0 + x1) as f32 / 2.0;
             assert!(

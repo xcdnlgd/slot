@@ -2,13 +2,13 @@ use slot_store::{Cart, Platform};
 use slot_ui::{
     cart_box, edge, foot_y, housing, icon_box, opening, recess, seated_box, Canvas, Draw, Shelf,
     SlotChrome, TexId, ALERT_PX, CART_H, CART_W, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y, MOUTH_H,
-    OUT_H, OUT_W,
+    PANEL_H, PANEL_W,
 };
 
-const CENTRED: f32 = (OUT_W - CART_W) as f32 / 2.0;
+const CENTRED: f32 = (PANEL_W - CART_W) as f32 / 2.0;
 
 fn centred(c: &Cart) -> f32 {
-    (OUT_W - cart_box(c.platform).0) as f32 / 2.0
+    (PANEL_W - cart_box(c.platform).0) as f32 / 2.0
 }
 
 fn cart() -> Cart {
@@ -66,8 +66,8 @@ fn quad(d: &Draw) -> Quad {
             Quad {
                 x: 0.0,
                 y: 0.0,
-                w: OUT_W as f32,
-                h: OUT_H as f32,
+                w: PANEL_W as f32,
+                h: PANEL_H as f32,
             }
         }
     }
@@ -76,7 +76,7 @@ fn quad(d: &Draw) -> Quad {
 fn is_cart(d: &Draw) -> bool {
     let cover = matches!(*d, Draw::Rect { colour, .. } if colour == [0.0, 0.0, 0.0, 1.0]);
     !(is_mouth(d) || is_lip(d) || is_housing(d) || tinted(d, recess()) || cover)
-        && quad(d).w < OUT_W as f32
+        && quad(d).w < PANEL_W as f32
 }
 
 fn is_game_layer(d: &Draw) -> bool {
@@ -152,7 +152,7 @@ fn chrome_into(c: &Cart, seat: f32, out: &mut Vec<Draw>) {
         over: true,
         behind: [None, None],
         slot: None,
-        canvas: Canvas::FRAMED,
+        canvas: Canvas::DEFAULT,
     }
     .draw(out);
 }
@@ -164,7 +164,7 @@ fn a_cart_the_row_had_not_finished_moving_slides_across_as_it_goes_in() {
     shelf.right();
     shelf.update(1.0 / 60.0);
     shelf.update(1.0 / 60.0);
-    let (rest, scale) = shelf.selected_at(Canvas::FRAMED);
+    let (rest, scale) = shelf.selected_at(Canvas::DEFAULT);
     assert!(
         (rest - CENTRED).abs() > 100.0 && scale < 0.95,
         "the row settled before the press: this proves nothing at {rest} and {scale}"
@@ -185,7 +185,7 @@ fn a_cart_the_row_had_not_finished_moving_slides_across_as_it_goes_in() {
             over: true,
             behind: [None, None],
             slot: None,
-            canvas: Canvas::FRAMED,
+            canvas: Canvas::DEFAULT,
         }
         .draw(&mut out);
         out.iter()
@@ -205,7 +205,7 @@ fn a_cart_the_row_had_not_finished_moving_slides_across_as_it_goes_in() {
     );
     let seated = at(1.0);
     let sw = seated_box(c.platform).0 as f32;
-    let mid = OUT_W as f32 / 2.0;
+    let mid = PANEL_W as f32 / 2.0;
     assert!(
         (seated.x + seated.w / 2.0 - mid).abs() < 0.01 && (seated.w - sw).abs() < 0.01,
         "the cart seats at {seated:?} rather than the slot's size in the mouth"
@@ -245,7 +245,7 @@ fn draw_powering_on(t: f32, out: &mut Vec<Draw>) {
         over: true,
         behind: [None, None],
         slot: None,
-        canvas: Canvas::FRAMED,
+        canvas: Canvas::DEFAULT,
     }
     .draw(out);
 }
@@ -330,7 +330,7 @@ fn the_cart_catches_on_the_lip_before_going_in() {
 fn an_unseated_cart_stands_where_the_shelf_left_it() {
     for (name, c) in both() {
         let mut shelf = Vec::new();
-        Shelf::new(vec![c.clone()]).draw_row(Canvas::FRAMED, None, 0.0, 0.0, 1.0, &mut shelf);
+        Shelf::new(vec![c.clone()]).draw_row(Canvas::DEFAULT, None, 0.0, 0.0, 1.0, &mut shelf);
         let on_shelf = quad(&shelf[cart_at(&shelf)]);
 
         let out = chrome(&c, 0.0);
@@ -344,7 +344,7 @@ fn an_unseated_cart_stands_where_the_shelf_left_it() {
 
 #[test]
 fn a_cart_shrinks_to_the_slot_by_the_lip() {
-    let lip = OUT_H as f32 - MOUTH_H;
+    let lip = PANEL_H as f32 - MOUTH_H;
     for (name, c) in both() {
         let (w, h) = cart_box(c.platform);
         let (sw, sh) = seated_box(c.platform);
@@ -375,7 +375,7 @@ fn a_cart_shrinks_to_the_slot_by_the_lip() {
 
 #[test]
 fn every_cartridge_lands_its_foot_on_the_lip_at_the_same_moment() {
-    let lip = OUT_H as f32 - MOUTH_H;
+    let lip = PANEL_H as f32 - MOUTH_H;
     let landings: Vec<(&str, f32, f32)> = both()
         .iter()
         .map(|(name, c)| {
@@ -434,7 +434,7 @@ fn a_seated_cart_stops_in_the_opening_and_covers_its_base() {
             "{name} does not reach the bottom of the recess"
         );
         assert!(
-            cart.y >= OUT_H as f32 - MOUTH_H,
+            cart.y >= PANEL_H as f32 - MOUTH_H,
             "{name} is left standing above the case"
         );
     }
@@ -636,7 +636,7 @@ fn nothing_is_ever_ruled_across_the_cart() {
                 }
                 if let Some((_, bottom)) = run {
                     assert!(
-                        bottom >= OUT_H as f32 - 0.01,
+                        bottom >= PANEL_H as f32 - 0.01,
                         "at {seat}, x {x}: cover stops at {bottom}, short of the bottom"
                     );
                 }
@@ -663,7 +663,7 @@ fn nothing_is_ever_ruled_across_the_cart() {
 
 #[test]
 fn the_cart_catches_on_the_top_edge_of_the_slot() {
-    let lip = OUT_H as f32 - MOUTH_H;
+    let lip = PANEL_H as f32 - MOUTH_H;
     for (name, c) in both() {
         let bottom_at = |t: f32| {
             let out = chrome(&c, t);
@@ -713,7 +713,7 @@ fn a_clear_carts_board_goes_into_the_slot_and_comes_out_with_it() {
                 over: false,
                 behind: [Some(interior), Some(board)],
                 slot: None,
-                canvas: Canvas::FRAMED,
+                canvas: Canvas::DEFAULT,
             }
             .draw(&mut out);
             let at = |t: TexId| {

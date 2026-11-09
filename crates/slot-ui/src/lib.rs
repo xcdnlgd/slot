@@ -1,4 +1,8 @@
 mod art;
+/// Supported device panel height, used by pure art helpers.
+pub const PANEL_W: u32 = 720;
+pub const PANEL_H: u32 = 480;
+
 pub use art::{cover, cover_bytes, decode_png_bytes};
 mod bitmaps;
 pub use bitmaps::{
@@ -45,7 +49,7 @@ mod toast;
 pub use art::decode as decode_png;
 pub use backdrop::{
     bezel_face, blur_background, default_background, default_game_bezel_face, draw_backdrop,
-    draw_ground, game_bezel_face, wallpaper_face, BezelArt,
+    draw_ground, game_bezel_face, wallpaper_face, BezelArt, BACKGROUND_H, BACKGROUND_W,
 };
 pub use barcode::{code39, CODE39_NARROW, CODE39_WIDE};
 pub use battery::{draw_gauge, BOLT_PX, GAUGE_H, GAUGE_W, WALL};
@@ -72,9 +76,9 @@ pub use clock::{
     clock_label, date_time_text, hhmm, time_text, ClockFaceSet, ClockFaces, ClockPicker, ClockRow,
     ClockScreen, Part,
 };
-pub use draw::{Canvas, Draw, TexId, OUT_H, OUT_W};
+pub use draw::{Canvas, Draw, TexId};
 pub use edit_text::{heading_text_face, stack_name_face};
-pub use footer::{draw_corners, draw_footer, draw_wifi_icon, Printed, FOOTER_Y};
+pub use footer::{draw_corners, draw_footer, draw_wifi_icon, footer_y, Printed};
 pub use guide::{
     cell, fitting_zoom, guide_help_face, mono_font, page_box, Guide, GuideGlyphs, GuideView,
     GUIDE_COLUMNS, GUIDE_HELP_HINT, GUIDE_HELP_TITLE, GUIDE_HINTS, GUIDE_ZOOMS, PAN_COLS,
@@ -91,8 +95,8 @@ pub use keyboard::{
 };
 pub use link_art::{
     link_art, LinkArt, ADAPTER_BASE_X, ADAPTER_BASE_Y, ADAPTER_H, ADAPTER_W, ARCS, ARROW_H,
-    ARROW_LEFT_X, ARROW_RIGHT_X, ARROW_W, ARROW_Y, CLICKS_H, CLICKS_W, CLICKS_X, CLICKS_Y, PLUG_H,
-    PLUG_TIP_X, PLUG_W, PORT_H, PORT_W, PORT_Y,
+    ARROW_LEFT_X, ARROW_RIGHT_X, ARROW_W, ARROW_Y, CLICKS_H, CLICKS_W, CLICKS_X, CLICKS_Y,
+    LINK_ART_H, LINK_ART_W, PLUG_H, PLUG_TIP_X, PLUG_W, PORT_H, PORT_W, PORT_Y,
 };
 pub use network_menu::{
     bars_rect, lock_rect, net_bars_face, net_lock_face, net_row_top, net_window, pair_face,

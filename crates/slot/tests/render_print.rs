@@ -5,7 +5,7 @@ use slot::print_scene::{
     PrintScene, PrintTextures,
 };
 use slot::server::qr_modules;
-use slot_gfx::{paper_bounds, Canvas, Compositor, Draw, HeadlessSurface, OUT_H, OUT_W};
+use slot_gfx::{paper_bounds, Canvas, Compositor, Draw, HeadlessSurface, PANEL_H, PANEL_W};
 use slot_ui::{receipt_face, ReceiptText};
 
 const PRINT_AT: u64 = 1160;
@@ -92,11 +92,11 @@ fn is_paper(c: [u8; 3]) -> bool {
     c.iter().all(|v| *v > 170)
 }
 
-const W: usize = OUT_W as usize;
+const W: usize = PANEL_W as usize;
 
 #[test]
 fn resting_paper_is_right_of_printer() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let px = r.at(REST_AT);
@@ -105,7 +105,7 @@ fn resting_paper_is_right_of_printer() {
     assert!(near(at(&px, W, 300, 240), at(&empty, W, 300, 240), 0));
     let changed: Vec<usize> = (0..W)
         .filter(|&x| {
-            (0..OUT_H as usize)
+            (0..PANEL_H as usize)
                 .any(|y| is_paper(at(&px, W, x, y)) && at(&px, W, x, y) != at(&empty, W, x, y))
         })
         .collect();
@@ -115,7 +115,7 @@ fn resting_paper_is_right_of_printer() {
 
 #[test]
 fn blades_cover_paper_during_print() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let px = r.at(RIP_AT - 10);
@@ -132,7 +132,7 @@ fn blades_cover_paper_during_print() {
 
 #[test]
 fn fold_shows_blank_back() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let t = RIP_AT + 620;
@@ -141,7 +141,7 @@ fn fold_shows_blank_back() {
     let px = r.shot(&f);
     let (x0, y0) = (p.pivot.0 - 226.0, p.pivot.1 - 425.0);
     let mut flap = 0;
-    for y in 0..OUT_H as usize {
+    for y in 0..PANEL_H as usize {
         for x in 0..W {
             let (qx, qy) = (x as f32 - x0, y as f32 - y0);
             let along = 0.62 * qx + 0.78 * qy - p.fold;
@@ -158,7 +158,7 @@ fn fold_shows_blank_back() {
 
 #[test]
 fn no_sliver_after_the_rip() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let t = CARRY_AT + 10;
@@ -174,7 +174,7 @@ fn no_sliver_after_the_rip() {
 
 #[test]
 fn fold_line_matches_the_mockup_offset() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let tex = r.tex.paper();
@@ -206,7 +206,7 @@ fn fold_line_matches_the_mockup_offset() {
 
 #[test]
 fn no_stub_is_left_in_the_slot_when_the_rip_ends() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let f = PrintScene::new(0).frame(CARRY_AT - 1);
@@ -221,7 +221,7 @@ fn no_stub_is_left_in_the_slot_when_the_rip_ends() {
 
 #[test]
 fn stop_is_printed_on_the_foot_of_the_sheet() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let px = r.at(REST_AT);
@@ -288,7 +288,7 @@ fn fits_640_panel() {
             );
         }
     }
-    let Some(mut wide) = rig((OUT_W, OUT_H)) else {
+    let Some(mut wide) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let full = wide.at(REST_AT);
@@ -308,7 +308,7 @@ fn fits_640_panel() {
 
 #[test]
 fn resting_qr_decodes() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let px = r.at(REST_AT);
@@ -316,7 +316,7 @@ fn resting_qr_decodes() {
         let c = at(&px, W, x, y);
         ((c[0] as u32 + c[1] as u32 + c[2] as u32) / 3) as u8
     };
-    let mut img = rqrr::PreparedImage::prepare_from_greyscale(W, OUT_H as usize, grey);
+    let mut img = rqrr::PreparedImage::prepare_from_greyscale(W, PANEL_H as usize, grey);
     let grids = img.detect_grids();
     assert_eq!(grids.len(), 1);
     let (_, content) = grids[0].decode().unwrap();
@@ -325,7 +325,7 @@ fn resting_qr_decodes() {
 
 #[test]
 fn serrated_edge_has_no_dark_fringe() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let face = receipt_face(
@@ -372,7 +372,7 @@ fn serrated_edge_has_no_dark_fringe() {
 
 #[test]
 fn flap_never_reaches_the_edge_of_its_bounds() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let white = Draw::Rect {
@@ -406,7 +406,7 @@ fn flap_never_reaches_the_edge_of_its_bounds() {
         let left = x.max(0.0) as usize;
         let right = ((x + w) as usize).min(W) - 1;
         let top = y.max(0.0) as usize;
-        let bottom = ((y + h) as usize).min(OUT_H as usize) - 1;
+        let bottom = ((y + h) as usize).min(PANEL_H as usize) - 1;
         for py in top..=bottom {
             if x > 0.0 {
                 assert_eq!(at(&px, W, left + 1, py), [255; 3], "fold {fold} left {py}");
@@ -427,7 +427,7 @@ fn flap_never_reaches_the_edge_of_its_bounds() {
                     "fold {fold} top {px_x}"
                 );
             }
-            if y + h < OUT_H as f32 {
+            if y + h < PANEL_H as f32 {
                 assert_eq!(
                     at(&px, W, px_x, bottom - 1),
                     [255; 3],
@@ -441,7 +441,7 @@ fn flap_never_reaches_the_edge_of_its_bounds() {
 #[test]
 #[ignore]
 fn contact_sheet() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let times = [
@@ -457,11 +457,11 @@ fn contact_sheet() {
     let f = s.frame(REST_AT + 100 + 220);
     shots.push(r.shot(&f));
     let (cols, rows) = (3, 2);
-    let (sw, sh) = (W * cols, OUT_H as usize * rows);
+    let (sw, sh) = (W * cols, PANEL_H as usize * rows);
     let mut sheet = vec![0u8; sw * sh * 3];
     for (i, shot) in shots.iter().enumerate() {
-        let (ox, oy) = (i % cols * W, i / cols * OUT_H as usize);
-        for y in 0..OUT_H as usize {
+        let (ox, oy) = (i % cols * W, i / cols * PANEL_H as usize);
+        for y in 0..PANEL_H as usize {
             for x in 0..W {
                 let c = at(shot, W, x, y);
                 let o = ((oy + y) * sw + ox + x) * 3;
@@ -482,7 +482,7 @@ fn contact_sheet() {
 
 #[test]
 fn the_slide_carries_the_whole_scene_up() {
-    let Some(mut r) = rig((OUT_W, OUT_H)) else {
+    let Some(mut r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let mut s = PrintScene::new(0);
@@ -496,17 +496,17 @@ fn the_slide_carries_the_whole_scene_up() {
     let whole = r.shot(&still);
     let slid = r.shot(&half);
     let row =
-        |px: &[u8], y: usize| px[y * OUT_W as usize * 4..(y + 1) * OUT_W as usize * 4].to_vec();
-    assert_eq!(row(&slid, 0), row(&whole, OUT_H as usize / 2));
+        |px: &[u8], y: usize| px[y * PANEL_W as usize * 4..(y + 1) * PANEL_W as usize * 4].to_vec();
+    assert_eq!(row(&slid, 0), row(&whole, PANEL_H as usize / 2));
     assert_ne!(
-        row(&slid, OUT_H as usize - 1),
-        row(&whole, OUT_H as usize - 1)
+        row(&slid, PANEL_H as usize - 1),
+        row(&whole, PANEL_H as usize - 1)
     );
 }
 
 #[test]
 fn the_printer_does_not_ride_up_with_the_slide() {
-    let Some(r) = rig((OUT_W, OUT_H)) else {
+    let Some(r) = rig((PANEL_W, PANEL_H)) else {
         return;
     };
     let mut s = PrintScene::new(0);

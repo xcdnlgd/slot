@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread;
 
 use crate::app::App;
-use slot_gfx::{Canvas, Compositor, Draw, TexId, OUT_H};
+use slot_gfx::{Canvas, Compositor, Draw, TexId};
 use slot_input::Millis;
 use slot_store::Platform;
 use slot_ui::{box_size, cart_box, foot_y, rest_y, CART_H, MOUTH_H};
@@ -158,8 +158,8 @@ pub fn rim_y(platform: Platform) -> f32 {
     foot_y(cart_box(platform).1 as f32) - BODY_H * box_scale(platform)
 }
 
-pub fn footer_top() -> f32 {
-    OUT_H as f32 - MOUTH_H
+pub fn footer_top(canvas: Canvas) -> f32 {
+    canvas.h - MOUTH_H
 }
 
 pub fn cart_rect(cart: (f32, f32), platform: Platform, canvas: Canvas) -> [f32; 4] {
@@ -257,7 +257,7 @@ pub fn unwrap_draws(
     let mid = canvas.w / 2.0;
     let foot = foot_y(cart_box(platform).1 as f32);
     let floor = foot + frame.box_drop;
-    let clip = footer_top();
+    let clip = footer_top(canvas);
     let limit = (clip - floor) / k;
     let base = Aff::shift(mid, floor)
         .then(Aff::turn(frame.shake))

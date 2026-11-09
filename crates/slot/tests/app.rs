@@ -14,7 +14,8 @@ use slot_store::{write_slot_state, Cart, Core, Platform, Scale, SlotState};
 use slot_ui::{
     board_at, board_in, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Canvas, Draw,
     Icon, Placed, TexId, BOARD_W, CART_H, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE,
-    LID_TURN, MOUTH_H, OUT_H, OUT_W, SLIDE_UP, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    LID_TURN, MOUTH_H, PANEL_H, PANEL_W, SLIDE_UP, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W,
+    TURN_PAD,
 };
 
 fn play(a: &mut App) {
@@ -1277,7 +1278,7 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     let_it_open(&mut app);
     let out = frame(&app);
 
-    let rest = board_at(Canvas::FRAMED, 1.0);
+    let rest = board_at(Canvas::DEFAULT, 1.0);
     let (board_i, board) = tex_at(&out, f.board).expect("no board");
     assert!(
         near(board, [rest.x, rest.y, rest.w, rest.h]),
@@ -1325,7 +1326,7 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     );
     assert!(turned_at(&out, f.blank).is_none(), "a blank chip at rest");
 
-    let (lid_rest, turn) = lid_at(Canvas::FRAMED, 1.0);
+    let (lid_rest, turn) = lid_at(Canvas::DEFAULT, 1.0);
     let want = grown(lid_rest, TURN_PAD as f32 * lid_rest.w / CART_W as f32);
     let (lid_i, lid, lid_turn) = turned_at(&out, f.lid).expect("no lid");
     assert!(
@@ -1351,11 +1352,11 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     let [cancel, swap, choose] = f.legend;
     let at = |tex| tex_at(&out, tex).expect("a legend hint is missing").1;
     let seen = |w: u32| (w - HINT_EDGE) as f32;
-    let y = OUT_H as f32 - MOUTH_H;
+    let y = PANEL_H as f32 - MOUTH_H;
     assert_eq!((at(cancel.0)[1], at(swap.0)[1], at(choose.0)[1]), (y, y, y));
     assert_eq!(
         at(choose.0)[0] + seen(choose.1),
-        OUT_W as f32 - at(cancel.0)[0],
+        PANEL_W as f32 - at(cancel.0)[0],
         "Cancel and Choose do not hold the footer's two edges"
     );
     let left = at(swap.0)[0] - at(cancel.0)[0] - seen(cancel.1);
@@ -1472,7 +1473,7 @@ fn the_seated_chip_moves_to_the_socket_it_hopped_to() {
     let_it_hop(&mut app);
     let out = frame(&app);
 
-    let (x, y) = on_board(board_at(Canvas::FRAMED, 1.0), CHIP_U[1], CHIP_V);
+    let (x, y) = on_board(board_at(Canvas::DEFAULT, 1.0), CHIP_U[1], CHIP_V);
     let want = grown(
         Placed {
             x,
@@ -1516,7 +1517,7 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
 
     let (_, lid, turn) = turned_at(&out, f.lid).expect("no lid");
     let want = grown(
-        lid_from(Canvas::FRAMED, shelf_cart_at(rest, 1.0), 0.0).0,
+        lid_from(Canvas::DEFAULT, shelf_cart_at(rest, 1.0), 0.0).0,
         TURN_PAD as f32,
     );
     assert!(
@@ -1563,11 +1564,14 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
         "the lid is not turning: {turn}"
     );
     assert!(
-        lid[1] < lid_at(Canvas::FRAMED, 0.0).0.y && lid[1] > lid_at(Canvas::FRAMED, 1.0).0.y,
+        lid[1] < lid_at(Canvas::DEFAULT, 0.0).0.y && lid[1] > lid_at(Canvas::DEFAULT, 1.0).0.y,
         "the lid is not on its way up: {lid:?}"
     );
     let (_, [bx, by, bw, bh]) = tex_at(&lifting, f.board).expect("no board mid-lift");
-    let (start, rest) = (board_at(Canvas::FRAMED, 0.0), board_at(Canvas::FRAMED, 1.0));
+    let (start, rest) = (
+        board_at(Canvas::DEFAULT, 0.0),
+        board_at(Canvas::DEFAULT, 1.0),
+    );
     assert_eq!(
         (bw, bh),
         (start.w, start.h),
@@ -1610,7 +1614,7 @@ fn mid_hop_the_chip_is_blank_tipped_and_off_the_board() {
     let (_, flying, tip) = turned_at(&out, f.blank).expect("no chip in flight");
     assert!(tip > 0.0, "a chip heading right does not lean right");
     assert!(flying[1] < seated[1], "the chip is not off the board");
-    let board = board_at(Canvas::FRAMED, 1.0);
+    let board = board_at(Canvas::DEFAULT, 1.0);
     let left = on_board(board, CHIP_U[0], CHIP_V).0 + CHIP_W as f32 / 2.0;
     let right = on_board(board, CHIP_U[1], CHIP_V).0 + CHIP_W as f32 / 2.0;
     let mid = flying[0] + flying[2] / 2.0;
@@ -1674,11 +1678,14 @@ fn closing_puts_the_cart_back_on_the_shelf() {
         "the lid is not turning level: {turn}"
     );
     assert!(
-        lid[1] > lid_at(Canvas::FRAMED, 1.0).0.y,
+        lid[1] > lid_at(Canvas::DEFAULT, 1.0).0.y,
         "the lid is not coming back down"
     );
     let (_, [bx, by, bw, bh]) = tex_at(&partway, f.board).expect("the board vanished mid-close");
-    let (start, rest) = (board_at(Canvas::FRAMED, 0.0), board_at(Canvas::FRAMED, 1.0));
+    let (start, rest) = (
+        board_at(Canvas::DEFAULT, 0.0),
+        board_at(Canvas::DEFAULT, 1.0),
+    );
     assert_eq!(
         (bw, bh),
         (start.w, start.h),
@@ -1753,7 +1760,7 @@ fn the_open_waits_on_the_shelf_for_its_faces() {
     );
 
     let_it_open(&mut app);
-    let (rest, _) = lid_at(Canvas::FRAMED, 1.0);
+    let (rest, _) = lid_at(Canvas::DEFAULT, 1.0);
     let rest = grown(rest, TURN_PAD as f32 * rest.w / CART_W as f32);
     let (_, lid, _) = turned_at(&frame(&app), f.lid).expect("no lid once open");
     assert!(
@@ -1811,7 +1818,7 @@ fn the_fallback_open_lifts_the_shelfs_own_face_for_the_lid() {
     app.update(1.501);
     let_it_open(&mut app);
 
-    let (rest, _) = lid_at(Canvas::FRAMED, 1.0);
+    let (rest, _) = lid_at(Canvas::DEFAULT, 1.0);
     let (_, lid, turn) =
         turned_at(&frame(&app), shelf_faces[0]).expect("no lid drawn from the shelf's own face");
     assert!(
@@ -2233,7 +2240,7 @@ fn a_jumped_to_letter_is_set_at_the_titles_size_on_its_baseline() {
     assert_eq!(h, slot_ui::TITLE_LINE_H as f32);
     assert_eq!(
         y + h,
-        slot_ui::slot_name_y() + slot_ui::HINT_H as f32,
+        slot_ui::slot_name_y(a.canvas()) + slot_ui::HINT_H as f32,
         "the letter left the title's baseline"
     );
 }
@@ -2258,7 +2265,7 @@ fn the_shelf_name_is_set_at_the_letters_size_on_its_baseline() {
     assert_eq!(h, slot_ui::TITLE_LINE_H as f32);
     assert_eq!(
         y + h,
-        slot_ui::slot_name_y() + slot_ui::HINT_H as f32,
+        slot_ui::slot_name_y(a.canvas()) + slot_ui::HINT_H as f32,
         "the shelf name left the title's baseline"
     );
 }
@@ -2267,6 +2274,7 @@ fn the_shelf_name_is_set_at_the_letters_size_on_its_baseline() {
 fn the_shader_shortcut_steps_the_seated_carts_shader_both_ways_and_names_it() {
     let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
     let (mut s, _motor) = common::session_with_platform(d.path());
+    s.app_mut().set_panel((640, 480));
     s.app_mut().apply(slot_input::Action::Insert);
     use slot_store::Shader;
     for (action, want, said) in [

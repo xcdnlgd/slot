@@ -5,7 +5,7 @@ use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
 use slot_store::{Blending, Core, Platform, Shader, StateRing};
 use slot_ui::{
-    Draw, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MOUTH_H, OUT_H, OUT_W,
+    Draw, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MOUTH_H, PANEL_H, PANEL_W,
 };
 use tempfile::TempDir;
 
@@ -601,7 +601,7 @@ fn exit_game_is_offered_with_two_carts() {
 }
 
 const CART: TexId = TexId::from_raw(77);
-const OUT_H_F: f32 = slot_ui::OUT_H as f32;
+const PANEL_H_F: f32 = slot_ui::PANEL_H as f32;
 
 fn paint_carts(a: &mut App) {
     for shelf in 0..6 {
@@ -688,7 +688,7 @@ fn the_pause_menu_slides_the_carousel_footer_up_and_back_down() {
         "the footer did not rise: {rising} -> {open}"
     );
     assert!(
-        open >= OUT_H_F - MOUTH_H - 1.0,
+        open >= PANEL_H_F - MOUTH_H - 1.0,
         "the cart stands above the footer at {open}"
     );
     a.apply(Action::QuickMenu);
@@ -716,13 +716,13 @@ fn pause_legends_sit_on_the_link_line_at_either_end() {
     frames(&mut a, 30);
     let (lx, ly, _) = legend_at(&a, 403);
     let (rx, ry, rw) = legend_at(&a, 402);
-    let footer = OUT_H as f32 - MOUTH_H;
+    let footer = PANEL_H as f32 - MOUTH_H;
     assert_eq!(ly, footer, "Resume does not fill the footer");
     assert_eq!(ry, footer, "Open does not fill the footer");
     assert!(lx.abs() < 1.0, "Resume is not on the left: {lx}");
     let right = rx + rw - HINT_EDGE as f32;
     assert!(
-        (right - OUT_W as f32).abs() < 1.0,
+        (right - PANEL_W as f32).abs() < 1.0,
         "Open is not on the right: {right}"
     );
     assert!(legend_missing(&a, 400), "Back is drawn beside Resume");
@@ -743,11 +743,14 @@ fn a_value_row_puts_change_on_the_right_of_the_footer() {
     frames(&mut a, 30);
     let (lx, ly, _) = legend_at(&a, 400);
     let (rx, ry, rw) = legend_at(&a, 401);
-    assert_eq!((ly, ry), (OUT_H as f32 - MOUTH_H, OUT_H as f32 - MOUTH_H));
+    assert_eq!(
+        (ly, ry),
+        (PANEL_H as f32 - MOUTH_H, PANEL_H as f32 - MOUTH_H)
+    );
     assert!(lx.abs() < 1.0, "Back is not on the left: {lx}");
     let right = rx + rw - HINT_EDGE as f32;
     assert!(
-        (right - OUT_W as f32).abs() < 1.0,
+        (right - PANEL_W as f32).abs() < 1.0,
         "Change is not on the right: {right}"
     );
     assert!(
@@ -788,7 +791,7 @@ fn closing_the_game_from_the_menu_keeps_the_footer_still_above_the_scaling_pictu
     );
     let parked = y.expect("no footer during the close");
     assert!(
-        parked >= OUT_H_F - MOUTH_H - 1.0,
+        parked >= PANEL_H_F - MOUTH_H - 1.0,
         "the cart left the carousel footer at {parked}"
     );
 }

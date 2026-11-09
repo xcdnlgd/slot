@@ -1,4 +1,4 @@
-use slot_gfx::{Canvas, Draw, TexId, OUT_H};
+use slot_gfx::{Canvas, Draw, TexId};
 use slot_store::Cart;
 
 use crate::cart::{cart_box, label_colour, label_text, seated_box, SEATED_W};
@@ -10,19 +10,19 @@ use crate::shelf::foot_y;
 pub const ALERT_PX: f32 = 44.0;
 
 pub const MOUTH_H: f32 = 58.0;
-const BAND_Y: f32 = OUT_H as f32 - MOUTH_H;
+
+fn band_y(canvas: Canvas) -> f32 {
+    canvas.h - MOUTH_H
+}
 
 pub const MOUTH_W: f32 = SEATED_W as f32 + 14.0;
 const SLIT_H: f32 = 9.0;
-const SLIT_Y: f32 = BAY_Y + 5.0;
 
 pub const LIP_H: f32 = 2.0;
 
 const BAY_W: f32 = MOUTH_W + 18.0;
-const BAY_Y: f32 = BAND_Y + LIP_H;
 const SCOOP_W: f32 = MOUTH_W * 0.88;
-const SCOOP_D: f32 = RECESS_H - (SCOOP_Y - BAY_Y);
-const SCOOP_Y: f32 = SLIT_Y + SLIT_H;
+const SCOOP_D: f32 = RECESS_H - (5.0 + SLIT_H);
 
 const RECESS_H: f32 = 42.0;
 const RIM_W: f32 = 2.0;
@@ -66,12 +66,8 @@ pub fn recess() -> [f32; 4] {
     rgb(RECESS)
 }
 
-const LIP_Y: f32 = BAND_Y;
-
-const SEATED_Y: f32 = BAY_Y + 4.0;
-
-fn catch_at(foot: f32, seated_foot: f32) -> f32 {
-    (LIP_Y - foot) / (seated_foot - foot)
+fn catch_at(lip_y: f32, foot: f32, seated_foot: f32) -> f32 {
+    (lip_y - foot) / (seated_foot - foot)
 }
 
 const CATCH_IN: f32 = 0.42;
@@ -106,7 +102,7 @@ impl SlotChrome<'_> {
                 x: 0.0,
                 y: 0.0,
                 w: canvas.w,
-                h: OUT_H as f32,
+                h: canvas.h,
                 colour: [0.0, 0.0, 0.0, dim],
             });
         }
@@ -129,8 +125,10 @@ impl SlotChrome<'_> {
         let (w0, h0) = (cw * scale, ch * scale);
         let (sw, sh) = seated_box(self.cart.platform);
         let (sw, sh) = (sw as f32, sh as f32);
-        let (foot0, seated_foot) = (foot_y(ch), SEATED_Y + sh);
-        let catch = catch_at(foot0, seated_foot);
+        let lip_y = band_y(canvas);
+        let bay_y = lip_y + LIP_H;
+        let (foot0, seated_foot) = (foot_y(ch), bay_y + 4.0 + sh);
+        let catch = catch_at(lip_y, foot0, seated_foot);
         let travel = travel(seat, catch);
         let k = (travel / catch).min(1.0);
         let (cw, ch) = (w0 + (sw - w0) * k, h0 + (sh - h0) * k);
@@ -224,7 +222,7 @@ fn band(x: f32, y: f32, w: f32, h: f32, c: [f32; 4], alpha: f32) -> Draw {
 fn strip(canvas: Canvas, tex: TexId, alpha: f32) -> Draw {
     Draw::Part {
         x: 0.0,
-        y: BAND_Y,
+        y: band_y(canvas),
         w: canvas.w,
         h: MOUTH_H,
         tex,
@@ -244,12 +242,16 @@ pub fn draw_slot_back(
         return;
     }
     let (bay_x, mouth_x) = (bay_x(canvas), mouth_x(canvas));
-    out.push(band(bay_x, BAND_Y, BAY_W, LIP_H, housing(), alpha));
-    out.push(band(mouth_x, BAND_Y, MOUTH_W, LIP_H, edge(), alpha));
-    out.push(band(bay_x, BAY_Y, BAY_W, RECESS_H, recess(), alpha));
-    out.push(band(mouth_x, SLIT_Y, MOUTH_W, SLIT_H, opening(), alpha));
+    let band_y = band_y(canvas);
+    let bay_y = band_y + LIP_H;
+    let slit_y = bay_y + 5.0;
+    let scoop_y = slit_y + SLIT_H;
+    out.push(band(bay_x, band_y, BAY_W, LIP_H, housing(), alpha));
+    out.push(band(mouth_x, band_y, MOUTH_W, LIP_H, edge(), alpha));
+    out.push(band(bay_x, bay_y, BAY_W, RECESS_H, recess(), alpha));
+    out.push(band(mouth_x, slit_y, MOUTH_W, SLIT_H, opening(), alpha));
     for_each_scoop_span(canvas, |x, w, depth| {
-        out.push(band(x, SCOOP_Y, w, depth, opening(), alpha));
+        out.push(band(x, scoop_y, w, depth, opening(), alpha));
     });
 }
 
@@ -270,22 +272,26 @@ fn front_bands(canvas: Canvas, mut band: impl FnMut(f32, f32, f32, f32, [f32; 4]
     let w = canvas.w;
     let (bay_x, cx) = (bay_x(canvas), canvas.w / 2.0);
     let right = bay_x + BAY_W;
-    let floor = SCOOP_Y + SCOOP_D + RIM_W;
-    band(0.0, BAND_Y, bay_x, MOUTH_H, housing());
-    band(right, BAND_Y, w - right, MOUTH_H, housing());
+    let band_y = band_y(canvas);
+    let bay_y = band_y + LIP_H;
+    let slit_y = bay_y + 5.0;
+    let scoop_y = slit_y + SLIT_H;
+    let floor = scoop_y + SCOOP_D + RIM_W;
+    band(0.0, band_y, bay_x, MOUTH_H, housing());
+    band(right, band_y, w - right, MOUTH_H, housing());
 
     let near = cx - SCOOP_W / 2.0;
-    band(bay_x, SCOOP_Y, near - bay_x, floor - SCOOP_Y, housing());
+    band(bay_x, scoop_y, near - bay_x, floor - scoop_y, housing());
     let far = cx + SCOOP_W / 2.0;
-    band(far, SCOOP_Y, right - far, floor - SCOOP_Y, housing());
+    band(far, scoop_y, right - far, floor - scoop_y, housing());
 
     for_each_scoop_span(canvas, |x, w, depth| {
-        let top = SCOOP_Y + depth + RIM_W;
+        let top = scoop_y + depth + RIM_W;
         band(x, top, w, floor - top, housing());
     });
-    band(0.0, floor, w, OUT_H as f32 - floor, housing());
+    band(0.0, floor, w, canvas.h - floor, housing());
     for_each_scoop_span(canvas, |x, w, depth| {
-        band(x, SCOOP_Y + depth, w, RIM_W, edge());
+        band(x, scoop_y + depth, w, RIM_W, edge());
     });
 }
 
@@ -306,8 +312,8 @@ fn for_each_scoop_span(canvas: Canvas, mut span: impl FnMut(f32, f32, f32)) {
 
 const SLOT_NAME_GAP: f32 = 6.0;
 
-pub fn slot_name_y() -> f32 {
-    OUT_H as f32 - MOUTH_H - HINT_H as f32 - SLOT_NAME_GAP
+pub fn slot_name_y(canvas: Canvas) -> f32 {
+    canvas.h - MOUTH_H - HINT_H as f32 - SLOT_NAME_GAP
 }
 
 pub fn draw_slot_title(canvas: Canvas, title: Printed, alpha: f32, out: &mut Vec<Draw>) {
@@ -317,7 +323,7 @@ pub fn draw_slot_title(canvas: Canvas, title: Printed, alpha: f32, out: &mut Vec
     let (w, h) = (title.w as f32, crate::plate::TITLE_LINE_H as f32);
     out.push(Draw::Tex {
         x: canvas.centred(w),
-        y: slot_name_y() + HINT_H as f32 - h,
+        y: slot_name_y(canvas) + HINT_H as f32 - h,
         w,
         h,
         tex,

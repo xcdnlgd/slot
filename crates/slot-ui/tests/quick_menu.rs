@@ -1,6 +1,6 @@
 use slot_store::{parse_stamp, Zone, FF_SPEEDS};
 use slot_ui::{
-    date_time_text, quick_label_face, quick_value_face, ClockPicker, ClockRow, QuickRow,
+    date_time_text, quick_label_face, quick_value_face, Canvas, ClockPicker, ClockRow, QuickRow,
     QuickValue, UndoFace, MENU_PAD,
 };
 
@@ -236,8 +236,8 @@ fn a_hidden_row_is_stepped_over_and_takes_no_place() {
     assert_eq!(QuickRow::Wallpaper.down(&[]), QuickRow::WallpaperTint);
     assert_eq!(QuickRow::ShelfMode.position(&[]), 3);
     assert_eq!(
-        slot_ui::quick_row_top(QuickRow::ShelfMode, &hidden)
-            - slot_ui::quick_row_top(QuickRow::Wallpaper, &hidden),
+        slot_ui::quick_row_top(QuickRow::ShelfMode, &hidden, Canvas::DEFAULT)
+            - slot_ui::quick_row_top(QuickRow::Wallpaper, &hidden, Canvas::DEFAULT),
         slot_ui::QUICK_PITCH
     );
 }
@@ -289,7 +289,6 @@ fn the_values_read_as_the_menu_prints_them() {
             "13",
             "14",
             "15",
-            "SP Screen",
             "Integer",
             "Fit",
             "Fill",
@@ -506,7 +505,8 @@ fn the_in_game_screen_panel_shows_three_rows_and_scrolls_the_rest() {
 
 #[test]
 fn a_scroll_bar_shows_only_on_a_page_with_rows_out_of_sight() {
-    let top = slot_ui::quick_scroll(QuickRow::Shader, &[]).expect("eleven rows in three");
+    let top = slot_ui::quick_scroll(QuickRow::Shader, &[], Canvas::DEFAULT)
+        .expect("eleven rows in three");
     assert!(
         (top.thumb_y - top.y).abs() < 0.5,
         "the thumb is not at the top"
@@ -515,17 +515,26 @@ fn a_scroll_bar_shows_only_on_a_page_with_rows_out_of_sight() {
         (top.thumb_h - top.h / 10.0).abs() < 0.5,
         "the thumb is not one row of ten"
     );
-    let end = slot_ui::quick_scroll(QuickRow::PlayContrast, &[]).expect("ten rows in three");
+    let end = slot_ui::quick_scroll(QuickRow::PlayContrast, &[], Canvas::DEFAULT)
+        .expect("ten rows in three");
     assert!(
         (end.thumb_y + end.thumb_h - (end.y + end.h)).abs() < 0.5,
         "the thumb is not at the bottom"
     );
     assert!(
-        slot_ui::quick_scroll(QuickRow::Shader, &[QuickRow::Palette, QuickRow::Bezel]).is_some(),
+        slot_ui::quick_scroll(
+            QuickRow::Shader,
+            &[QuickRow::Palette, QuickRow::Bezel],
+            Canvas::DEFAULT
+        )
+        .is_some(),
         "eight rows in three still scroll"
     );
-    assert_eq!(slot_ui::quick_scroll(QuickRow::Rumble, &[]), None);
-    assert!(slot_ui::quick_scroll(QuickRow::GameUp, &[]).is_some());
+    assert_eq!(
+        slot_ui::quick_scroll(QuickRow::Rumble, &[], Canvas::DEFAULT),
+        None
+    );
+    assert!(slot_ui::quick_scroll(QuickRow::GameUp, &[], Canvas::DEFAULT).is_some());
 }
 
 #[test]
@@ -533,7 +542,8 @@ fn the_thumb_reaches_the_bottom_only_on_the_last_row() {
     let rows = QuickRow::CONTROLS;
     let mut last_y = f32::MIN;
     for (i, row) in rows.iter().enumerate() {
-        let bar = slot_ui::quick_scroll(*row, &[]).expect("the controls page scrolls");
+        let bar =
+            slot_ui::quick_scroll(*row, &[], Canvas::DEFAULT).expect("the controls page scrolls");
         let at_bottom = (bar.thumb_y + bar.thumb_h - (bar.y + bar.h)).abs() < 0.5;
         assert_eq!(at_bottom, i == rows.len() - 1, "{row:?} at {i}");
         assert!(bar.thumb_y > last_y, "{row:?}: the thumb did not move down");
@@ -568,14 +578,14 @@ fn screen_opens_a_page_per_console_and_each_backs_out_to_its_console() {
 #[test]
 fn screen_rows_in_game_sit_in_a_panel_at_the_bottom() {
     let hidden = [QuickRow::Palette];
-    let shader = slot_ui::quick_row_top(QuickRow::Shader, &hidden);
-    let bezel = slot_ui::quick_row_top(QuickRow::Bezel, &hidden);
+    let shader = slot_ui::quick_row_top(QuickRow::Shader, &hidden, Canvas::DEFAULT);
+    let bezel = slot_ui::quick_row_top(QuickRow::Bezel, &hidden, Canvas::DEFAULT);
     assert_eq!(bezel - shader, slot_ui::QUICK_PITCH);
     assert!(
-        shader > slot_ui::OUT_H as f32 / 2.0,
+        shader > slot_ui::PANEL_H as f32 / 2.0,
         "the panel starts at {shader}, covering more than three rows of the game"
     );
-    assert!(slot_ui::quick_row_top(QuickRow::FastForward, &[]) < shader);
+    assert!(slot_ui::quick_row_top(QuickRow::FastForward, &[], Canvas::DEFAULT) < shader);
 }
 
 #[test]
@@ -650,11 +660,14 @@ fn server_sits_first_on_the_tools_page() {
 
 #[test]
 fn the_wifi_row_holds_its_place_when_the_rest_of_the_network_page_hides() {
-    let all = slot_ui::quick_row_top(QuickRow::WifiPower, &[]);
+    let all = slot_ui::quick_row_top(QuickRow::WifiPower, &[], Canvas::DEFAULT);
     let off: Vec<QuickRow> = QuickRow::NETWORK[1..].to_vec();
-    assert_eq!(slot_ui::quick_row_top(QuickRow::WifiPower, &off), all);
     assert_eq!(
-        slot_ui::quick_row_top(QuickRow::WifiPower, &[QuickRow::Server]),
+        slot_ui::quick_row_top(QuickRow::WifiPower, &off, Canvas::DEFAULT),
+        all
+    );
+    assert_eq!(
+        slot_ui::quick_row_top(QuickRow::WifiPower, &[QuickRow::Server], Canvas::DEFAULT),
         all
     );
 }

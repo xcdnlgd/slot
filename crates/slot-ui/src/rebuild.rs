@@ -1,4 +1,4 @@
-use slot_gfx::{Canvas, Draw, TexId, OUT_H, OUT_W};
+use slot_gfx::{Canvas, Draw, TexId};
 
 use crate::hud::{FILL, HUD_INK, TRACK};
 use crate::plate::UndoFace;
@@ -35,7 +35,8 @@ fn line_face(label: &str, px: f32, h: u32) -> UndoFace {
             h: 0,
         };
     };
-    let w = OUT_W;
+    const FACE_W: u32 = 720;
+    let w = FACE_W;
     let mut rgba = vec![0u8; (w * h * 4) as usize];
     let layout = text::fit(font, label, w as f32, 1, px, px);
     text::draw_centred(&mut rgba, w, h, &layout, HUD_INK);
@@ -80,7 +81,7 @@ impl RebuildScreen {
             x: 0.0,
             y: 0.0,
             w: canvas.w,
-            h: OUT_H as f32,
+            h: canvas.h,
             colour: [0.0, 0.0, 0.0, 1.0],
         });
         let height = |line: Option<(TexId, u32, u32)>, gap: f32| {
@@ -88,7 +89,7 @@ impl RebuildScreen {
         };
         let stack = height(self.title, TITLE_GAP) + BAR_H + height(self.count, COUNT_GAP);
         let x = canvas.centred(BAR_W);
-        let y = OUT_H as f32 / 2.0 - stack / 2.0 + height(self.title, TITLE_GAP);
+        let y = canvas.h / 2.0 - stack / 2.0 + height(self.title, TITLE_GAP);
         let centred = |(tex, w, h): (TexId, u32, u32), top: f32| Draw::Tex {
             x: canvas.centred(w as f32),
             y: top,

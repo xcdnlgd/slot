@@ -4,7 +4,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use slot_gfx::{Canvas, Compositor, HeadlessSurface};
 use slot_store::{Cart, Platform};
-use slot_ui::{cart_face, cart_shadow, Draw, Shelf, SlotChrome, TexId, CART_W, OUT_H, OUT_W};
+use slot_ui::{cart_face, cart_shadow, Draw, Shelf, SlotChrome, TexId, CART_W, PANEL_H, PANEL_W};
 
 static GL: Mutex<()> = Mutex::new(());
 
@@ -56,7 +56,7 @@ fn composed(c: &mut Compositor, list: &[Draw]) -> Vec<u8> {
 
 fn write_png(px: &[u8], path: &str) {
     let file = std::fs::File::create(path).expect("create png");
-    let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+    let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
     e.set_color(png::ColorType::Rgba);
     e.set_depth(png::BitDepth::Eight);
     e.write_header()
@@ -72,15 +72,15 @@ fn shot(px: &[u8], name: &str) {
     }
 }
 
-const BAND: std::ops::Range<usize> = (OUT_H as usize / 4)..(OUT_H as usize / 2);
+const BAND: std::ops::Range<usize> = (PANEL_H as usize / 4)..(PANEL_H as usize / 2);
 
 fn occupied(px: &[u8], x: usize) -> bool {
-    BAND.map(|y| (y * OUT_W as usize + x) * 4)
+    BAND.map(|y| (y * PANEL_W as usize + x) * 4)
         .any(|o| px[o] > 0x18 || px[o + 1] > 0x18 || px[o + 2] > 0x18)
 }
 
 fn bare_edges(px: &[u8]) -> (usize, usize) {
-    let w = OUT_W as usize;
+    let w = PANEL_W as usize;
     let left = (0..w).take_while(|x| !occupied(px, *x)).count();
     let right = (0..w).take_while(|x| !occupied(px, w - 1 - *x)).count();
     (left, right)
@@ -95,7 +95,7 @@ fn held_scroll(c: &mut Compositor, n: usize, frames: usize) -> Vec<Vec<u8>> {
             s.tick(f as u64 * 1000 / 60);
             s.update(1.0 / 60.0);
             let mut list = Vec::new();
-            s.draw(Canvas::FRAMED, 0.0, None, &mut list);
+            s.draw(Canvas::DEFAULT, 0.0, None, &mut list);
             composed(c, &list)
         })
         .collect()
@@ -140,7 +140,10 @@ fn a_shelf_of_one_does_not_move_when_a_shoulder_is_held() {
     let want = bare_edges(&frames[0]);
     assert_eq!(
         want,
-        ((OUT_W - CART_W) as usize / 2, (OUT_W - CART_W) as usize / 2),
+        (
+            (PANEL_W - CART_W) as usize / 2,
+            (PANEL_W - CART_W) as usize / 2
+        ),
         "the lone cart is not standing centred at its own width even before the press"
     );
     for (f, px) in frames.iter().enumerate() {
@@ -164,14 +167,14 @@ fn the_slot_takes_over_the_cart_where_the_row_had_it() {
     s.update(1.0 / 60.0);
     s.update(1.0 / 60.0);
     let mut before = Vec::new();
-    s.draw_row(Canvas::FRAMED, None, 0.0, 0.0, 1.0, &mut before);
+    s.draw_row(Canvas::DEFAULT, None, 0.0, 0.0, 1.0, &mut before);
     let before = composed(&mut c, &before);
     shot(&before, "handover-before");
 
     let cart = s.carts[s.index].clone();
-    let (rest, scale) = s.selected_at(Canvas::FRAMED);
+    let (rest, scale) = s.selected_at(Canvas::DEFAULT);
     let mut after = Vec::new();
-    s.draw_row(Canvas::FRAMED, Some(&cart.stem), 0.0, 0.0, 1.0, &mut after);
+    s.draw_row(Canvas::DEFAULT, Some(&cart.stem), 0.0, 0.0, 1.0, &mut after);
     SlotChrome {
         cart: &cart,
         face: Some(faces[s.index]),
@@ -185,14 +188,14 @@ fn the_slot_takes_over_the_cart_where_the_row_had_it() {
         over: true,
         behind: [None, None],
         slot: None,
-        canvas: Canvas::FRAMED,
+        canvas: Canvas::DEFAULT,
     }
     .draw(&mut after);
     let after = composed(&mut c, &after);
     shot(&after, "handover-after");
 
     let columns =
-        |px: &[u8]| -> Vec<bool> { (0..OUT_W as usize).map(|x| occupied(px, x)).collect() };
+        |px: &[u8]| -> Vec<bool> { (0..PANEL_W as usize).map(|x| occupied(px, x)).collect() };
     let (a, b) = (columns(&before), columns(&after));
     let moved = a.iter().zip(&b).filter(|(x, y)| x != y).count();
     assert!(

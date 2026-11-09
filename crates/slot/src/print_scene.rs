@@ -2,7 +2,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 
 use crate::app::shift_down;
-use slot_gfx::{paper_flap_shows, Canvas, Compositor, Draw, GfxError, TexId, OUT_H, OUT_W};
+use slot_gfx::{paper_flap_shows, Canvas, Compositor, Draw, GfxError, TexId};
 use slot_input::Millis;
 use slot_ui::{
     cover_bytes, default_background, ease, receipt_blank, receipt_face, ReceiptText, UndoFace,
@@ -355,7 +355,8 @@ const FRONT_PNG: &[u8] = include_bytes!("../../../assets/server/printer_front.pn
 const LAMP_R: f32 = 9.0;
 const LAMP_XY: (f32, f32) = (355.0, 349.0);
 const LAMP_OFF: [u8; 3] = [0x14, 0x16, 0x1b];
-const SCENE_W: f32 = OUT_W as f32;
+const SCENE_W: f32 = 720.0;
+const SCENE_H: u32 = 480;
 
 pub struct StageArt {
     printer: Vec<u8>,
@@ -407,8 +408,8 @@ pub fn print_art(job: PaperJob) -> Option<PrintArt> {
 
 pub fn stage_art() -> Option<StageArt> {
     Some(StageArt {
-        printer: cover_bytes(PRINTER_PNG, OUT_W, OUT_H)?,
-        front: cover_bytes(FRONT_PNG, OUT_W, OUT_H)?,
+        printer: cover_bytes(PRINTER_PNG, SCENE_W as u32, SCENE_H)?,
+        front: cover_bytes(FRONT_PNG, SCENE_W as u32, SCENE_H)?,
         lamp: lamp_disc(),
     })
 }
@@ -471,9 +472,13 @@ impl PrintTextures {
     pub fn upload(c: &mut Compositor, art: &StageArt) -> Result<PrintTextures, GfxError> {
         c.prepare_paper()?;
         Ok(PrintTextures {
-            wood: c.create_texture(OUT_W, OUT_H, default_background().unwrap_or_default()),
-            printer: c.create_texture(OUT_W, OUT_H, &art.printer),
-            front: c.create_texture(OUT_W, OUT_H, &art.front),
+            wood: c.create_texture(
+                SCENE_W as u32,
+                SCENE_H,
+                default_background().unwrap_or_default(),
+            ),
+            printer: c.create_texture(SCENE_W as u32, SCENE_H, &art.printer),
+            front: c.create_texture(SCENE_W as u32, SCENE_H, &art.front),
             paper: c.create_texture(1, 1, &[0; 4]),
             lamp: (
                 c.create_texture(art.lamp.w, art.lamp.h, &art.lamp.rgba),
@@ -512,7 +517,7 @@ pub fn print_draws(f: &PrintFrame, tex: &PrintTextures, canvas: Canvas, out: &mu
 
 fn scene_draws(f: &PrintFrame, tex: &PrintTextures, canvas: Canvas, out: &mut Vec<Draw>) {
     let shift = canvas.centred(SCENE_W);
-    let (w, h) = (SCENE_W, OUT_H as f32);
+    let (w, h) = (SCENE_W, SCENE_H as f32);
     let layer = |tex, y| Draw::Tex {
         x: shift,
         y,

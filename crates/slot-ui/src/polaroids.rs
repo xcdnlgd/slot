@@ -138,8 +138,8 @@ impl Polaroids {
         clock: Printed,
         out: &mut Vec<Draw>,
     ) {
-        self.draw_photo(Canvas::FRAMED, out);
-        self.draw_chrome(Canvas::FRAMED, battery, battery_percent, bolt, clock, out);
+        self.draw_photo(Canvas::DEFAULT, out);
+        self.draw_chrome(Canvas::DEFAULT, battery, battery_percent, bolt, clock, out);
     }
 
     pub fn draw_chrome(

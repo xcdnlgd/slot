@@ -1,8 +1,10 @@
 use std::path::Path;
 
-use slot_gfx::{Draw, OUT_H, OUT_W};
+use slot_gfx::Draw;
 use slot_store::{StateEntry, RING_MAX};
-use slot_ui::{hint_face, hint_width, Polaroids, Printed, DOT, HINT_H, LEGEND, PLATE_H};
+use slot_ui::{
+    hint_face, hint_width, Polaroids, Printed, DOT, HINT_H, LEGEND, PANEL_H, PANEL_W, PLATE_H,
+};
 
 fn entry(stamp: &str) -> StateEntry {
     StateEntry {
@@ -61,8 +63,8 @@ fn quads(out: &[Draw]) -> Vec<Quad> {
             | Draw::Paper { .. } => Quad {
                 x: 0.0,
                 y: 0.0,
-                w: OUT_W as f32,
-                h: OUT_H as f32,
+                w: PANEL_W as f32,
+                h: PANEL_H as f32,
                 alpha: 1.0,
             },
         })
@@ -160,7 +162,7 @@ fn the_legend_runs_left_to_right_along_the_bottom_plate() {
     }
     for h in hints {
         assert!(
-            h.y >= OUT_H as f32 - PLATE_H && h.y + h.h <= OUT_H as f32,
+            h.y >= PANEL_H as f32 - PLATE_H && h.y + h.h <= PANEL_H as f32,
             "a hint at {} left the bottom plate",
             h.y
         );
@@ -178,7 +180,7 @@ fn a_full_ring_of_dots_stays_clear_of_the_legend() {
     assert_eq!(dots.len(), RING_MAX);
     for d in dots {
         assert!(
-            d.x >= 0.0 && d.x + d.w <= OUT_W as f32,
+            d.x >= 0.0 && d.x + d.w <= PANEL_W as f32,
             "a dot at {} is off the plate",
             d.x
         );
@@ -211,7 +213,7 @@ fn the_switcher_puts_the_ways_out_on_the_left() {
     let mut p = switcher_with(3);
     p.set_undo(Some("Undo save"));
     let out = draw(&p);
-    let mid = OUT_W as f32 / 2.0;
+    let mid = PANEL_W as f32 / 2.0;
     for key in ["B", "Y"] {
         let r = hint_rect(&out, key).unwrap_or_else(|| panic!("no {key} hint"));
         assert!(r.x + r.w < mid, "{key} is not on the left");
@@ -242,7 +244,7 @@ fn the_full_legend_fits_across_the_bar() {
     p.set_undo(Some("Undo save"));
     let total: u32 = p.hints().iter().map(|h| hint_face(h.key, &h.label).w).sum();
     assert!(
-        total < OUT_W,
+        total < PANEL_W,
         "the legend is {total}px wide, wider than the screen"
     );
 }

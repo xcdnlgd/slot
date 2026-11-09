@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use slot_gfx::{Canvas, GameLayout, Sizing, OUT_H, OUT_W, WHOLE_TEXTURE};
+use slot_gfx::{Canvas, GameSize, Sizing, DEFAULT_PANEL, WHOLE_TEXTURE};
 use slot_input::{Action, Btn, RawEvent, MENU_DOUBLE_TAP_MS, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power, RepairResult};
 use slot_retro::LinkChannel;
@@ -112,7 +112,6 @@ const SLOT_NAME_OUT_MS: Millis = 800;
 const SLOT_NAME_ALPHA: f32 = 1.0;
 const CORE_PICKER_DIM: f32 = 0.25 / (1.0 - CORE_PICKER_RECEDE);
 const LINK_TEXT_Y: f32 = 44.0;
-const LINK_LEGEND_Y: f32 = OUT_H as f32 - MOUTH_H;
 const EDIT_DIM: [f32; 4] = [0.043, 0.043, 0.059, 0.38];
 const PART_PUSH: f32 = 300.0;
 const SIDE_SCALE: f32 = 0.78;
@@ -643,7 +642,7 @@ pub struct App {
     quick_palette_faces: Option<[(TexId, u32, u32); 2]>,
     quick_bezel_faces: [Option<[(TexId, u32, u32); 2]>; 3],
     game_bezel: Option<TexId>,
-    bezel_column: Vec<u8>,
+    bezel_hole: Option<(i32, i32, u32, u32)>,
     in_game_menu: Option<QuickRow>,
     footer: f32,
     footer_row: Option<QuickRow>,
@@ -671,7 +670,6 @@ pub struct App {
     screen: f32,
     blank_s: f32,
     lift: f32,
-    sp_strip: Option<TexId>,
     eject_overlay: f32,
     panel: (u32, u32),
     game_ready: bool,
@@ -815,28 +813,6 @@ pub struct FaceWant {
     pub shelf: usize,
     pub index: usize,
     pub on_screen: bool,
-}
-
-fn transparent_span(column: &[u8]) -> Option<(usize, usize)> {
-    let mut best = None;
-    let mut start = None;
-    for (at, &alpha) in column.iter().enumerate() {
-        if alpha < 128 {
-            start.get_or_insert(at);
-        } else if let Some(from) = start.take() {
-            let span = (from, at - 1);
-            if best.is_none_or(|(a, b)| span.1 - span.0 > b - a) {
-                best = Some(span);
-            }
-        }
-    }
-    if let Some(from) = start {
-        let span = (from, column.len() - 1);
-        if best.is_none_or(|(a, b)| span.1 - span.0 > b - a) {
-            best = Some(span);
-        }
-    }
-    best
 }
 
 fn retain_headers(carts: &[Cart]) {
@@ -1143,7 +1119,7 @@ impl App {
             quick_palette_faces: None,
             quick_bezel_faces: [None, None, None],
             game_bezel: None,
-            bezel_column: Vec::new(),
+            bezel_hole: None,
             in_game_menu: None,
             footer: 0.0,
             footer_row: None,
@@ -1171,9 +1147,8 @@ impl App {
             screen: 0.0,
             blank_s: 0.0,
             lift: 1.0,
-            sp_strip: None,
             eject_overlay: 0.0,
-            panel: (0, 0),
+            panel: DEFAULT_PANEL,
             game_ready: false,
             clock: 0.0,
             power: None,
@@ -2962,43 +2937,12 @@ impl App {
         .clone();
     }
 
-    pub fn sp_frame(&self) -> bool {
-        self.resolved_bezel(self.playing_platform()) == BezelPick::Ags102
-            && !self.game_layout().panel
-    }
-
-    pub fn picture_on_top(&self) -> bool {
-        if self.sp_frame() {
-            return true;
-        }
-        let layout = self.game_layout();
-        matches!(
-            self.resolved_bezel(self.playing_platform()),
-            BezelPick::File(_)
-        ) && self.shown_game_bezel().is_some()
-            && !layout.panel
-            && slot_gfx::hole_on_top(&self.bezel_column, self.panel, self.picture_in_band(layout))
-    }
-
-    fn picture_in_band(&self, layout: GameLayout) -> (f32, f32) {
-        let [_, y, _, h] = layout.rect;
-        let (top, tall) = match self.source_rect() == WHOLE_TEXTURE {
-            true => {
-                let rows = self.playing_platform().picture().1 as f32;
-                let src = slot_gfx::SRC_H as f32;
-                ((src - rows) / 2.0 / src, rows / src)
-            }
-            false => (0.0, 1.0),
-        };
-        ((y + h * top) / OUT_H as f32, h * tall / OUT_H as f32)
-    }
-
     pub fn set_game_bezel(&mut self, tex: Option<TexId>) {
         self.game_bezel = tex;
     }
 
-    pub fn set_bezel_column(&mut self, column: Vec<u8>) {
-        self.bezel_column = column;
+    pub fn set_bezel_hole(&mut self, hole: Option<(i32, i32, u32, u32)>) {
+        self.bezel_hole = hole;
     }
 
     pub fn shown_game_bezel(&self) -> Option<TexId> {
@@ -3019,7 +2963,6 @@ impl App {
         }
         let gba = self.playing_platform().hardware() == Platform::Gba;
         match (self.picture().0, self.framed_panel()) {
-            (Sizing::Band, _) => Some(BezelArt::Default),
             _ if gba => None,
             (Sizing::Integer, false) => Some(BezelArt::Default),
             (Sizing::Integer, true) => Some(BezelArt::Integer4x3),
@@ -3152,8 +3095,8 @@ impl App {
     }
 
     fn grounds(&self) -> [Option<(TexId, u32)>; 3] {
-        let ground = self.ground.map(|t| (t, OUT_W));
-        let blur = self.blur.map(|t| (t, OUT_W)).or(ground);
+        let ground = self.ground.map(|t| (t, slot_ui::BACKGROUND_W));
+        let blur = self.blur.map(|t| (t, slot_ui::BACKGROUND_W)).or(ground);
         let own = self
             .wallpaper
             .map(|t| (t, self.wallpaper_size().0))
@@ -3193,7 +3136,7 @@ impl App {
                 x: 0.0,
                 y: 0.0,
                 w: self.canvas().w,
-                h: OUT_H as f32,
+                h: self.canvas().h,
                 colour: [0.0, 0.0, 0.0, alpha],
             });
         }
@@ -3561,53 +3504,34 @@ impl App {
         }
     }
 
-    pub fn game_layout(&self) -> GameLayout {
-        let (sizing, source) = self.picture();
-        self.layout_of(self.playing_platform(), sizing, source)
+    pub fn game_size(&self) -> GameSize {
+        let (sizing, _) = self.picture();
+        slot_gfx::game_size(self.panel, self.playing_platform().picture(), sizing)
     }
 
-    /// Shift the game rect to the middle of the panel, or of a custom bezel's
-    /// transparent hole. Built-in bezels are already laid out for their scale,
-    /// so they keep their own alignment.
-    pub fn game_offset_px(&self) -> i32 {
-        if self.picture().0 == Sizing::Panel {
-            return 0;
+    /// Put the picture in the middle of the panel, or in the middle of a
+    /// panel-sized bezel's transparent hole.
+    pub fn game_offset(&self) -> (i32, i32) {
+        let size = self.game_size();
+        if self.picture_fills() {
+            return (0, 0);
         }
-        let (_, y, _, h) = slot_gfx::panel_game_rect(self.panel, self.game_layout());
-        if h <= 0 {
-            return 0;
-        }
-        let offset = match self.resolved_bezel(self.playing_platform()) {
-            BezelPick::None => (self.panel.1 as i32 - h) / 2 - y,
-            BezelPick::File(_) => {
-                let Some((top, bottom)) = transparent_span(&self.bezel_column) else {
-                    return 0;
-                };
-                let hole_center = (top as i32 + bottom as i32 + 1) / 2;
-                hole_center - (y + h / 2)
-            }
-            BezelPick::Default | BezelPick::Ags102 => return 0,
+        let (sw, sh) = (size.w as i32, size.h as i32);
+        let (pw, ph) = (self.panel.0 as i32, self.panel.1 as i32);
+        let (x, y) = match self.bezel_hole {
+            Some((hx, hy, hw, hh)) => (
+                (hx as f32 + hw as f32 / 2.0 - sw as f32 / 2.0).round() as i32,
+                (hy as f32 + hh as f32 / 2.0 - sh as f32 / 2.0).round() as i32,
+            ),
+            None => ((pw - sw) / 2, (ph - sh) / 2),
         };
-        offset.clamp(-(self.panel.1 as i32), self.panel.1 as i32)
+        (x.clamp(0, (pw - sw).max(0)), y.clamp(0, (ph - sh).max(0)))
     }
 
-    fn layout_of(&self, platform: Platform, sizing: Sizing, _source: [f32; 4]) -> GameLayout {
-        slot_gfx::game_layout(self.panel, platform.picture(), sizing)
-    }
-
-    fn shown_as(&self, platform: Platform, scale: Scale) -> (bool, [i32; 4]) {
-        let (sizing, source) = picture_for(platform, scale);
-        let layout = self.layout_of(platform, sizing, source);
-        let [rx, ry, rw, rh] = layout.rect;
-        (
-            layout.panel,
-            [
-                (rx * 100.0).round() as i32,
-                (ry * 100.0).round() as i32,
-                (rw * 100.0).round() as i32,
-                (rh * 100.0).round() as i32,
-            ],
-        )
+    fn shown_as(&self, platform: Platform, scale: Scale) -> (u32, u32) {
+        let (sizing, _) = picture_for(platform, scale);
+        let size = slot_gfx::game_size(self.panel, platform.picture(), sizing);
+        (size.w, size.h)
     }
 
     fn scale_candidates(platform: Platform) -> &'static [Scale] {
@@ -3623,7 +3547,6 @@ impl App {
         for &scale in Self::scale_candidates(platform) {
             let shown = self.shown_as(platform, scale);
             match seen.iter().position(|s| *s == shown) {
-                Some(at) if choices[at] == Scale::SpFrame => choices[at] = scale,
                 Some(_) => {}
                 None => {
                     seen.push(shown);
@@ -5892,14 +5815,14 @@ impl App {
     }
 
     pub fn wallpaper_size(&self) -> (u32, u32) {
-        (Canvas::of(self.panel).w as u32, OUT_H)
+        (
+            Canvas::of(self.panel).w as u32,
+            Canvas::of(self.panel).h as u32,
+        )
     }
 
     pub fn game_bezel_size(&self) -> (u32, u32) {
-        match slot_gfx::framed(self.panel) {
-            true => self.panel,
-            false => (OUT_W, OUT_H),
-        }
+        self.panel
     }
 
     pub fn shows_game(&self) -> bool {
@@ -5921,27 +5844,8 @@ impl App {
         Canvas::of(self.panel)
     }
 
-    pub fn set_sp_strip(&mut self, tex: Option<TexId>) {
-        self.sp_strip = tex;
-    }
-
-    fn draw_sp_strip(&self, out: &mut Vec<Draw>) {
-        let slide = self.overlay_slide();
-        let shown = self.shows_game() && self.sp_frame() && self.framed_panel() && slide > 0.0;
-        let Some(tex) = self.sp_strip.filter(|_| shown) else {
-            return;
-        };
-        let canvas = self.canvas();
-        let drop =
-            slot_gfx::lifted_rect(self.panel, slide).1 as f32 * canvas.h / self.panel.1 as f32;
-        out.push(Draw::Tex {
-            x: 0.0,
-            y: drop,
-            w: canvas.w,
-            h: canvas.h,
-            tex,
-            alpha: 1.0,
-        });
+    fn link_legend_y(&self) -> f32 {
+        self.canvas().h - MOUTH_H
     }
 
     pub fn overlay_slide(&self) -> f32 {
@@ -5965,7 +5869,7 @@ impl App {
             x: 0.0,
             y: 0.0,
             w: self.canvas().w,
-            h: OUT_H as f32,
+            h: self.canvas().h,
             colour: [0.0, 0.0, 0.0, 1.0],
         });
         if self.panel_lit() && self.screen > 0.0 {
@@ -6368,7 +6272,7 @@ impl App {
                 x: 0.0,
                 y: 0.0,
                 w: self.canvas().w,
-                h: OUT_H as f32,
+                h: self.canvas().h,
                 colour: [0.0, 0.0, 0.0, 1.0],
             });
             let which = if self.repairing {
@@ -6381,7 +6285,7 @@ impl App {
             if let Some((tex, w, h)) = self.shutdown_faces.get(which.index()).copied() {
                 out.push(Draw::Tex {
                     x: self.canvas().centred(w as f32).floor(),
-                    y: ((OUT_H - h) / 2) as f32,
+                    y: (self.canvas().h - h as f32) / 2.0,
                     w: w as f32,
                     h: h as f32,
                     tex,
@@ -6461,7 +6365,7 @@ impl App {
                 gbc_bezel: self.quick_bezel_faces[bezel_slot(Platform::Gbc)],
                 bezel: None,
                 over_game: false,
-                footer_top: OUT_H as f32,
+                footer_top: self.canvas().h,
                 canvas: self.canvas(),
             }
             .draw(out),
@@ -6531,7 +6435,12 @@ impl App {
                         out,
                     );
                     if self.wifi_up() {
-                        slot_ui::draw_wifi_icon(self.battery_percent, self.wifi_face(), out);
+                        slot_ui::draw_wifi_icon(
+                            self.canvas(),
+                            self.battery_percent,
+                            self.wifi_face(),
+                            out,
+                        );
                     }
                 }
                 if let Some(picker) = self.core_picker_shown() {
@@ -6615,7 +6524,6 @@ impl App {
                 self.push_game(out);
                 if let Some(p) = &self.polaroids {
                     p.draw_photo(self.canvas(), out);
-                    self.draw_sp_strip(out);
                     p.draw_chrome(
                         self.canvas(),
                         self.battery,
@@ -6631,15 +6539,11 @@ impl App {
                     x: 0.0,
                     y: 0.0,
                     w: self.canvas().w,
-                    h: OUT_H as f32,
+                    h: self.canvas().h,
                     colour: [0.0, 0.0, 0.0, 1.0],
                 });
-                self.draw_sp_strip(out);
                 return;
             }
-        }
-        if !matches!(self.phase, Phase::Polaroids { .. }) {
-            self.draw_sp_strip(out);
         }
         if self.shot_wanted && matches!(self.phase, Phase::Playing { .. }) && self.game_visible() {
             out.push(Draw::Capture);
@@ -6668,7 +6572,7 @@ impl App {
                 gbc_bezel: None,
                 bezel: self.quick_bezel_faces[bezel_slot(self.playing_platform())],
                 over_game: true,
-                footer_top: OUT_H as f32 - MOUTH_H + self.menu_footer_offset(),
+                footer_top: self.canvas().h - MOUTH_H + self.menu_footer_offset(),
                 canvas: self.canvas(),
             }
             .draw(out);
@@ -6753,7 +6657,7 @@ impl App {
         };
         shift_down(&mut out[start..], dy);
         if let Some(row) = row {
-            self.draw_menu_legends(row, LINK_LEGEND_Y + dy, out);
+            self.draw_menu_legends(row, self.link_legend_y() + dy, out);
         }
     }
 
@@ -6778,7 +6682,7 @@ impl App {
             out,
         );
         if self.wifi_up() {
-            slot_ui::draw_wifi_icon(self.battery_percent, self.wifi_face(), out);
+            slot_ui::draw_wifi_icon(self.canvas(), self.battery_percent, self.wifi_face(), out);
         }
         shift_down(&mut out[start..], self.menu_footer_offset());
     }
@@ -6811,7 +6715,7 @@ impl App {
             x: 0.0,
             y: 0.0,
             w: self.canvas().w,
-            h: OUT_H as f32,
+            h: self.canvas().h,
             colour: [0.0, 0.0, 0.0, 1.0],
         });
         let [lines @ .., no, yes] = faces else {
@@ -6819,7 +6723,7 @@ impl App {
         };
         let gaps = REPAIR_GAP * lines.len().saturating_sub(1) as u32;
         let total = lines.iter().map(|l| l.2).sum::<u32>() + gaps;
-        let mut y = (OUT_H.saturating_sub(total) / 2) as f32;
+        let mut y = (self.canvas().h as u32).saturating_sub(total) as f32 / 2.0;
         for &(tex, w, h) in lines {
             out.push(Draw::Tex {
                 x: self.canvas().centred(w as f32).floor(),
@@ -6831,8 +6735,8 @@ impl App {
             });
             y += (h + REPAIR_GAP) as f32;
         }
-        self.draw_side_legend((no.0, no.1), false, LINK_LEGEND_Y, out);
-        self.draw_side_legend((yes.0, yes.1), true, LINK_LEGEND_Y, out);
+        self.draw_side_legend((no.0, no.1), false, self.link_legend_y(), out);
+        self.draw_side_legend((yes.0, yes.1), true, self.link_legend_y(), out);
     }
 
     fn draw_about_legend(&self, out: &mut Vec<Draw>) {
@@ -6843,8 +6747,8 @@ impl App {
             true => faces.legend_light,
             false => faces.legend,
         };
-        self.draw_side_legend(back, false, LINK_LEGEND_Y, out);
-        self.draw_side_legend(restart, true, LINK_LEGEND_Y, out);
+        self.draw_side_legend(back, false, self.link_legend_y(), out);
+        self.draw_side_legend(restart, true, self.link_legend_y(), out);
     }
 
     fn draw_menu_legends(&self, row: QuickRow, y: f32, out: &mut Vec<Draw>) {
@@ -6889,7 +6793,7 @@ impl App {
             (None, false, ClockRow::Zone) => vec![back, open],
             (None, false, ClockRow::Clock | ClockRow::NetworkTime) => vec![back, change],
         };
-        self.draw_spread_legends(&legends, LINK_LEGEND_Y, 1.0, out);
+        self.draw_spread_legends(&legends, self.link_legend_y(), 1.0, out);
     }
 
     fn draw_spread_legends(
@@ -8058,19 +7962,22 @@ impl App {
                 };
                 self.draw_spread_legends_each(
                     &[cancel, check, add[ink]],
-                    LINK_LEGEND_Y,
+                    self.link_legend_y(),
                     &[1.0, 1.0, dim],
                     out,
                 );
             }
             Edit::Choosing { .. } => {
-                self.draw_spread_legends(&[back, add], LINK_LEGEND_Y, self.edit_fade(), out)
+                self.draw_spread_legends(&[back, add], self.link_legend_y(), self.edit_fade(), out)
             }
-            Edit::Removing { .. } => {
-                self.draw_spread_legends(&[keep, remove], LINK_LEGEND_Y, self.edit_fade(), out)
-            }
+            Edit::Removing { .. } => self.draw_spread_legends(
+                &[keep, remove],
+                self.link_legend_y(),
+                self.edit_fade(),
+                out,
+            ),
             Edit::MovingGame { .. } | Edit::MovingCollection { .. } => {
-                self.draw_spread_legends(&[cancel, drop], LINK_LEGEND_Y, 1.0, out)
+                self.draw_spread_legends(&[cancel, drop], self.link_legend_y(), 1.0, out)
             }
         }
     }
@@ -8448,7 +8355,7 @@ impl App {
 
         let legends = &self.core_legend_faces[self.light() as usize];
         if !legends.is_empty() {
-            self.draw_spread_legends(legends, LINK_LEGEND_Y, lift, out);
+            self.draw_spread_legends(legends, self.link_legend_y(), lift, out);
         }
     }
 
@@ -8459,7 +8366,7 @@ impl App {
                 x: 0.0,
                 y: 0.0,
                 w: canvas.w,
-                h: OUT_H as f32,
+                h: self.canvas().h,
                 tex,
                 alpha: 1.0,
             });
@@ -8468,7 +8375,7 @@ impl App {
             x: 0.0,
             y: 0.0,
             w: canvas.w,
-            h: OUT_H as f32,
+            h: self.canvas().h,
             colour: LINK_SCRIM,
         });
         if let Some(sprites) = &self.link_sprites {
@@ -8528,7 +8435,7 @@ impl App {
         for (tex, w) in all {
             out.push(Draw::Tex {
                 x: x.round(),
-                y: LINK_LEGEND_Y,
+                y: self.link_legend_y(),
                 w: w as f32,
                 h: MOUTH_H,
                 tex,
@@ -8558,7 +8465,7 @@ impl App {
         for &(tex, w) in faces {
             out.push(Draw::Tex {
                 x,
-                y: LINK_LEGEND_Y,
+                y: self.link_legend_y(),
                 w: w as f32,
                 h: MOUTH_H,
                 tex,
@@ -9424,7 +9331,7 @@ impl App {
             self.draw_background(out);
             self.shelf()
                 .draw_row(canvas, Some(&studio.cart.stem), 0.0, 0.0, 1.0, out);
-            self.draw_studio_ground((e - 1.0) * OUT_H as f32, out);
+            self.draw_studio_ground((e - 1.0) * self.canvas().h, out);
             self.draw_studio_cart(out);
             return draw_empty_slot(canvas, self.slot_faces, out);
         }
@@ -9537,7 +9444,7 @@ impl App {
         if n <= 2 {
             for (i, legend) in legends.iter().enumerate() {
                 if let Some(face) = self.studio_legends.get(&(*legend, i == 0, light)) {
-                    self.draw_side_legend(*face, i == 1, LINK_LEGEND_Y, out);
+                    self.draw_side_legend(*face, i == 1, self.link_legend_y(), out);
                 }
             }
             return;
@@ -9553,7 +9460,7 @@ impl App {
         for (tex, w) in faces {
             out.push(Draw::Tex {
                 x: x.floor(),
-                y: LINK_LEGEND_Y,
+                y: self.link_legend_y(),
                 w: w as f32,
                 h: MOUTH_H,
                 tex,
@@ -9726,7 +9633,7 @@ impl App {
 
     fn draw_studio_ground(&self, top: f32, out: &mut Vec<Draw>) {
         let w = self.canvas().w;
-        let h = OUT_H as f32;
+        let h = self.canvas().h;
         out.push(Draw::Rect {
             x: 0.0,
             y: top,
@@ -10343,7 +10250,7 @@ impl App {
         const LINE_H: f32 = 40.0;
         const GAP: f32 = 18.0;
         let mid = self.canvas().w / 2.0;
-        let room = OUT_H as f32 - MOUTH_H;
+        let room = self.canvas().h - MOUTH_H;
         let top = ((room - (2.0 * LINE_H + BAR_H + 2.0 * GAP)) / 2.0).floor();
         let (x, y) = ((mid - BAR_W / 2.0).floor(), top + LINE_H + GAP);
         self.draw_fetch_text(0, mid, top, out);
@@ -10386,12 +10293,17 @@ impl App {
                     Some(scene) => {
                         self.draw_fetch_scene(scene, out);
                         self.draw_fetch_text(0, mid, 26.0, out);
-                        self.draw_fetch_text(1, mid, slot_ui::slot_name_y() - 30.0, out);
-                        self.draw_fetch_text(2, mid, slot_ui::slot_name_y(), out);
+                        self.draw_fetch_text(
+                            1,
+                            mid,
+                            slot_ui::slot_name_y(self.canvas()) - 30.0,
+                            out,
+                        );
+                        self.draw_fetch_text(2, mid, slot_ui::slot_name_y(self.canvas()), out);
                     }
                     None => {
                         let lines = self.fetch_text.len().min(2) as f32;
-                        let top = ((OUT_H as f32 - MOUTH_H - 40.0 * lines) / 2.0).floor();
+                        let top = ((self.canvas().h - MOUTH_H - 40.0 * lines) / 2.0).floor();
                         self.draw_fetch_text(0, mid, top, out);
                         self.draw_fetch_text(1, mid, top + 40.0, out);
                     }
@@ -10407,12 +10319,12 @@ impl App {
         draw_empty_slot(canvas, self.slot_faces, out);
         if let Some(legends) = self.fetch_legends {
             let legends = legends[usize::from(self.light())];
-            self.draw_side_legend(legends[legend], false, LINK_LEGEND_Y, out);
+            self.draw_side_legend(legends[legend], false, self.link_legend_y(), out);
             if legend == 0 {
-                self.draw_side_legend(legends[1], true, LINK_LEGEND_Y, out);
+                self.draw_side_legend(legends[1], true, self.link_legend_y(), out);
             }
             if self.fetch_can_skip() {
-                self.draw_side_legend(legends[4], true, LINK_LEGEND_Y, out);
+                self.draw_side_legend(legends[4], true, self.link_legend_y(), out);
             }
         }
     }
@@ -10421,7 +10333,7 @@ impl App {
         const MARGIN: f32 = 44.0;
         const COLUMN: f32 = 288.0;
         const ROW: f32 = 40.0;
-        let ground = OUT_H as f32 - MOUTH_H;
+        let ground = self.canvas().h - MOUTH_H;
         let canvas_w = self.canvas().w;
         let (left, right) = match featured {
             Some(_) => (MARGIN + COLUMN + 40.0, canvas_w - MARGIN),
@@ -10552,7 +10464,7 @@ impl App {
         let (fw, fh) = (tex.w as f32, tex.h as f32);
         let (w, h) = (fw * scale, fh * scale);
         let x = ((self.canvas().w - w) / 2.0).floor();
-        let y = ((OUT_H as f32 - MOUTH_H - h) / 2.0).floor();
+        let y = ((self.canvas().h - MOUTH_H - h) / 2.0).floor();
         let rect = [
             x + well[0] as f32 * scale,
             y + well[1] as f32 * scale,
@@ -11497,9 +11409,9 @@ impl App {
             return;
         };
         let light = self.light() as usize;
-        self.draw_side_legend(net.cancel[light], false, LINK_LEGEND_Y, out);
+        self.draw_side_legend(net.cancel[light], false, self.link_legend_y(), out);
         if self.pair_retryable() {
-            self.draw_side_legend(net.retry[light], true, LINK_LEGEND_Y, out);
+            self.draw_side_legend(net.retry[light], true, self.link_legend_y(), out);
         }
     }
 
@@ -11839,7 +11751,7 @@ impl App {
             "Cancel" => net.map_or(back, |n| n.cancel[light as usize]),
             _ => back,
         };
-        self.draw_side_legend(left, false, LINK_LEGEND_Y, out);
+        self.draw_side_legend(left, false, self.link_legend_y(), out);
         let right = match self.network_action() {
             Some("Open") => Some(open),
             Some("Change") => Some(change),
@@ -11851,7 +11763,7 @@ impl App {
             _ => None,
         };
         if let Some(right) = right {
-            self.draw_side_legend(right, true, LINK_LEGEND_Y, out);
+            self.draw_side_legend(right, true, self.link_legend_y(), out);
         }
     }
 
@@ -12260,11 +12172,11 @@ impl App {
         };
         match self.update {
             Some(UpdateState::Checking | UpdateState::Downloading(..)) => {
-                self.draw_side_legend(cancel, false, LINK_LEGEND_Y, out)
+                self.draw_side_legend(cancel, false, self.link_legend_y(), out)
             }
             Some(UpdateState::Available(..)) => {
-                self.draw_side_legend(cancel, false, LINK_LEGEND_Y, out);
-                self.draw_side_legend(install, true, LINK_LEGEND_Y, out);
+                self.draw_side_legend(cancel, false, self.link_legend_y(), out);
+                self.draw_side_legend(install, true, self.link_legend_y(), out);
             }
             _ => {}
         }
@@ -12277,13 +12189,13 @@ impl App {
             x: 0.0,
             y: 0.0,
             w: canvas.w,
-            h: OUT_H as f32,
+            h: self.canvas().h,
             colour: [r, g, b, alpha],
         });
         let (tex, w, h) = scene.logo;
         out.push(Draw::Tex {
             x: canvas.centred(w as f32).floor(),
-            y: ((OUT_H - h) / 2) as f32,
+            y: (self.canvas().h - h as f32) / 2.0,
             w: w as f32,
             h: h as f32,
             tex,
@@ -12364,13 +12276,13 @@ impl App {
             x: 0.0,
             y: 0.0,
             w: self.canvas().w,
-            h: OUT_H as f32,
+            h: self.canvas().h,
             colour: [0.0, 0.0, 0.0, 1.0],
         });
         let lines = &self.update_faces;
         let gaps = REPAIR_GAP * lines.len().saturating_sub(1) as u32;
         let total = lines.iter().map(|l| l.2).sum::<u32>() + gaps;
-        let mut y = (OUT_H.saturating_sub(total) / 2) as f32;
+        let mut y = (self.canvas().h as u32).saturating_sub(total) as f32 / 2.0;
         for &(tex, w, h) in lines {
             out.push(Draw::Tex {
                 x: self.canvas().centred(w as f32).floor(),
@@ -12387,15 +12299,15 @@ impl App {
         };
         match self.update {
             Some(UpdateState::Available(..)) => {
-                self.draw_side_legend(cancel, false, LINK_LEGEND_Y, out);
-                self.draw_side_legend(install, true, LINK_LEGEND_Y, out);
+                self.draw_side_legend(cancel, false, self.link_legend_y(), out);
+                self.draw_side_legend(install, true, self.link_legend_y(), out);
             }
             Some(UpdateState::Battery(_)) => {
-                self.draw_side_legend(cancel, false, LINK_LEGEND_Y, out);
-                self.draw_side_legend(install, true, LINK_LEGEND_Y, out);
+                self.draw_side_legend(cancel, false, self.link_legend_y(), out);
+                self.draw_side_legend(install, true, self.link_legend_y(), out);
             }
             Some(UpdateState::UpToDate | UpdateState::Failed(_) | UpdateState::Notice(_)) => {
-                self.draw_side_legend(back, false, LINK_LEGEND_Y, out)
+                self.draw_side_legend(back, false, self.link_legend_y(), out)
             }
             _ => {}
         }
@@ -13522,7 +13434,6 @@ fn blending_value(blending: Blending) -> QuickValue {
 
 fn picture_for(platform: Platform, scale: Scale) -> (Sizing, [f32; 4]) {
     let sizing = match scale {
-        Scale::SpFrame => Sizing::Band,
         Scale::Integer => Sizing::Integer,
         Scale::Fit => Sizing::Fit,
         Scale::FullScreen => Sizing::Panel,
@@ -13533,7 +13444,6 @@ fn picture_for(platform: Platform, scale: Scale) -> (Sizing, [f32; 4]) {
 
 fn scale_value(scale: Scale) -> QuickValue {
     match scale {
-        Scale::SpFrame => QuickValue::SpFrame,
         Scale::Integer => QuickValue::Integer,
         Scale::Fit => QuickValue::Fit,
         Scale::FullScreen => QuickValue::FullScreen,

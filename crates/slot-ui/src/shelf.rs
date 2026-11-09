@@ -1,4 +1,4 @@
-use slot_gfx::{Canvas, Draw, TexId, OUT_H};
+use slot_gfx::{Canvas, Draw, TexId};
 use slot_store::{Cart, Platform};
 
 use crate::board::{board_in, Placed};
@@ -12,9 +12,9 @@ const SIDE_ALPHA: f32 = 1.0;
 
 pub fn rest_y(h: f32) -> f32 {
     let y = if h > CART_H as f32 {
-        (OUT_H as f32 - MOUTH_H - h) / 2.0
+        (crate::PANEL_H as f32 - MOUTH_H - h) / 2.0
     } else {
-        (OUT_H + CART_H) as f32 / 2.0 - h
+        (crate::PANEL_H as f32 + CART_H as f32) / 2.0 - h
     };
     // A Game Boy pak is 337px in a 422px gap, which centres at 42.5. Snap to a
     // whole pixel so the 312×337 bitmap hits the RG SP panel 1:1.

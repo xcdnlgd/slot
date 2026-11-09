@@ -1,5 +1,7 @@
-use slot_gfx::{Canvas, Draw, TexId, OUT_H, OUT_W};
-use slot_ui::{draw_backdrop, draw_sticker, sticker_face, wallpaper_face, StickerFields};
+use slot_gfx::{Canvas, Draw, TexId};
+use slot_ui::{
+    draw_backdrop, draw_sticker, sticker_face, wallpaper_face, StickerFields, PANEL_H, PANEL_W,
+};
 
 #[test]
 fn render_about() {
@@ -9,7 +11,7 @@ fn render_about() {
     let model = std::env::var("SCRATCH_MODEL").unwrap_or_default();
     let paper = std::env::var("SCRATCH_WALL")
         .ok()
-        .and_then(|p| wallpaper_face(std::path::Path::new(&p), OUT_W, OUT_H));
+        .and_then(|p| wallpaper_face(std::path::Path::new(&p), PANEL_W, PANEL_H));
     let label = sticker_face(&StickerFields {
         battery: Some(87),
         serial: "04738857",
@@ -20,13 +22,13 @@ fn render_about() {
 
     let mut list = Vec::new();
     draw_backdrop(
-        Canvas::FRAMED,
-        paper.as_ref().map(|_| (TexId::from_raw(0), OUT_W)),
+        Canvas::DEFAULT,
+        paper.as_ref().map(|_| (TexId::from_raw(0), PANEL_W)),
         &mut list,
     );
-    draw_sticker(Canvas::FRAMED, Some(TexId::from_raw(1)), &mut list);
+    draw_sticker(Canvas::DEFAULT, Some(TexId::from_raw(1)), &mut list);
 
-    let (w, h) = (OUT_W as usize, OUT_H as usize);
+    let (w, h) = (PANEL_W as usize, PANEL_H as usize);
     let mut px = vec![0u8; w * h * 4];
     for p in px.chunks_mut(4) {
         p.copy_from_slice(&[0, 0, 0, 255]);
@@ -66,7 +68,7 @@ fn render_about() {
                 alpha,
             } => {
                 let (src, sw, sh) = match tex == TexId::from_raw(0) {
-                    true => (paper.as_deref().unwrap_or(&[]), OUT_W, OUT_H),
+                    true => (paper.as_deref().unwrap_or(&[]), PANEL_W, PANEL_H),
                     false => (label.rgba.as_slice(), label.w, label.h),
                 };
                 if src.is_empty() {

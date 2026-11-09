@@ -9,7 +9,7 @@ use common::{clocked, tmp_root_with_carts};
 use slot::art::jobs::{ArtEvent, ArtJob, ArtJobs};
 use slot::fetch_art::{FetchArt, Stage};
 use slot::frontend::Frontend;
-use slot_gfx::{Compositor, HeadlessSurface, OUT_W};
+use slot_gfx::{Compositor, HeadlessSurface, PANEL_W};
 use slot_input::{Action, Btn};
 use slot_power::SimPlatform;
 use slot_store::Platform;
@@ -83,14 +83,14 @@ fn dump(frame: &[u8], name: &str) {
         return;
     };
     let file = std::fs::File::create(format!("{dir}/fetch-{name}.png")).unwrap();
-    let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, slot_gfx::OUT_H);
+    let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, slot_gfx::PANEL_H);
     e.set_color(png::ColorType::Rgba);
     e.set_depth(png::BitDepth::Eight);
     e.write_header().unwrap().write_image_data(frame).unwrap();
 }
 
 fn px(frame: &[u8], x: usize, y: usize) -> [u8; 3] {
-    let o = (y * OUT_W as usize + x) * 4;
+    let o = (y * PANEL_W as usize + x) * 4;
     [frame[o], frame[o + 1], frame[o + 2]]
 }
 

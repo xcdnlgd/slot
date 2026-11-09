@@ -15,7 +15,7 @@ use slot_input::Action;
 use slot_store::Core;
 use slot_ui::{
     arrows_hint_face, hint_face, link_art, menu_face, toast_face, Canvas, CartFace, Draw, TexId,
-    Toast, UndoFace, OUT_H, OUT_W, PORT_Y,
+    Toast, UndoFace, PANEL_H, PANEL_W, PORT_Y,
 };
 
 struct Face {
@@ -76,7 +76,7 @@ fn sprites_and_faces() -> (LinkSprites, Vec<(TexId, Face)>) {
 }
 
 fn composite(out: &[Draw], faces: &[(TexId, Face)]) -> Vec<u8> {
-    let (w, h) = (OUT_W as usize, OUT_H as usize);
+    let (w, h) = (PANEL_W as usize, PANEL_H as usize);
     let mut px = vec![0u8; w * h * 4];
     for i in 0..w * h {
         px[i * 4..i * 4 + 4].copy_from_slice(&[0x05, 0x05, 0x08, 255]);
@@ -145,14 +145,14 @@ fn composite(out: &[Draw], faces: &[(TexId, Face)]) -> Vec<u8> {
 }
 
 fn at(px: &[u8], x: usize, y: usize) -> [u8; 3] {
-    let o = (y * OUT_W as usize + x) * 4;
+    let o = (y * PANEL_W as usize + x) * 4;
     [px[o], px[o + 1], px[o + 2]]
 }
 
 fn render(menu: GameMenu, kind: LinkKind, now: u64, name: &str) -> Vec<u8> {
     let (sprites, faces) = sprites_and_faces();
     let mut out = Vec::new();
-    draw_link_art(Canvas::FRAMED, menu, kind, now, &sprites, &mut out);
+    draw_link_art(Canvas::DEFAULT, menu, kind, now, &sprites, &mut out);
     let px = composite(&out, &faces);
     dump(&px, name);
     px
@@ -164,7 +164,7 @@ fn dump(px: &[u8], name: &str) {
     };
     let path = format!("{dir}/link-{name}.png");
     let file = std::fs::File::create(&path).unwrap();
-    let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+    let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
     e.set_color(png::ColorType::Rgba);
     e.set_depth(png::BitDepth::Eight);
     e.write_header().unwrap().write_image_data(px).unwrap();
@@ -300,8 +300,8 @@ fn ink(px: &[u8]) -> usize {
 }
 
 fn inked_rows(px: &[u8]) -> (usize, usize) {
-    let rows: Vec<usize> = (0..OUT_H as usize)
-        .filter(|y| (0..OUT_W as usize).any(|x| lit(px, (y * OUT_W as usize + x) * 4)))
+    let rows: Vec<usize> = (0..PANEL_H as usize)
+        .filter(|y| (0..PANEL_W as usize).any(|x| lit(px, (y * PANEL_W as usize + x) * 4)))
         .collect();
     (
         *rows.first().expect("nothing on the frame"),
@@ -477,7 +477,7 @@ fn a_cart_nothing_can_link_reads_no_link_support_on_the_glass() {
     );
     let (first, last) = inked_rows(&px);
     assert!(
-        last < OUT_H as usize / 4,
+        last < PANEL_H as usize / 4,
         "the banner is not up in the plate band: rows {first}..{last}"
     );
 }
@@ -553,11 +553,11 @@ fn the_legend_shows_select_mode_only_where_the_hardware_can_be_switched() {
     for (px, what) in [(&switchable, "switchable"), (&fixed, "fixed")] {
         let (first, last) = inked_rows(px);
         assert!(
-            first >= OUT_H as usize * 3 / 4,
+            first >= PANEL_H as usize * 3 / 4,
             "the {what} legend is not down on the strip: rows {first}..{last}"
         );
         assert!(
-            last < OUT_H as usize,
+            last < PANEL_H as usize,
             "the {what} legend runs off the bottom of the panel"
         );
     }
@@ -687,7 +687,7 @@ fn a_warm_radio_goes_straight_to_looking_for_the_other_player() {
     );
     let (first, last) = inked_rows(&px);
     assert!(
-        last < OUT_H as usize / 2,
+        last < PANEL_H as usize / 2,
         "the line is not up where the link screen's sentence goes: rows {first}..{last}"
     );
 }

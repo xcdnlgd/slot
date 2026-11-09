@@ -134,7 +134,6 @@ pub fn run() {
     frontend.set_panel(window);
     frontend.upload_boot_faces(&mut compositor);
     slot::boot_time::mark("faces");
-    frontend.upload_bezel(&mut compositor, window);
     slot::boot_time::mark("bezel");
     let mut input = DeviceInput::open(&root);
     slot::boot_time::mark("input");

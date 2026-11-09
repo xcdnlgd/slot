@@ -81,7 +81,7 @@ fn a_host_window_resized_to_4_by_3_lays_the_shelf_out_for_it() {
     f.upload_faces(&mut c);
     f.upload_bezel(&mut c, (720, 480));
     f.render(&mut c, (720, 480));
-    assert_eq!(f.app().canvas(), Canvas::FRAMED);
+    assert_eq!(f.app().canvas(), Canvas::DEFAULT);
     f.render(&mut c, (640, 480));
     assert_eq!(
         f.app().canvas(),
@@ -92,7 +92,7 @@ fn a_host_window_resized_to_4_by_3_lays_the_shelf_out_for_it() {
     f.render(&mut c, (1080, 720));
     assert_eq!(
         f.app().canvas(),
-        Canvas::FRAMED,
+        Canvas::DEFAULT,
         "a 3:2 window kept the 4:3 layout"
     );
 }
@@ -885,7 +885,7 @@ const BEZELS: [(&str, [u8; 4]); 3] = [
 #[test]
 fn a_plain_bezel_draws_in_every_scale() {
     for scale in [
-        slot_store::Scale::SpFrame,
+        slot_store::Scale::FullScreen,
         slot_store::Scale::Integer,
         slot_store::Scale::Fit,
     ] {
@@ -918,7 +918,7 @@ fn a_suffixed_bezel_draws_its_file_for_the_scale() {
 fn a_suffixed_bezel_with_no_file_for_the_scale_draws_no_bezel() {
     let Some(px) = gb_with_bezel_files(
         "native-bezel-suffix-missing",
-        slot_store::Scale::SpFrame,
+        slot_store::Scale::FullScreen,
         "Shell_fit.png",
         &BEZELS,
     ) else {

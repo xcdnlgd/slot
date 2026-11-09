@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use crate::draw::{Canvas, Draw, TexId, OUT_H};
+use crate::draw::{Canvas, Draw, TexId};
 use crate::hud::HUD_INK;
 use crate::icon::symbols_font;
 use crate::plate::UndoFace;
@@ -378,7 +378,7 @@ impl PairScreen<'_> {
             .iter()
             .map(|(slot, face)| slot.y() + face.2 as f32)
             .fold(top, f32::max);
-        let shift = (OUT_H as f32 - MOUTH_H - (bottom - top)) / 2.0 - top;
+        let shift = (self.canvas.h - MOUTH_H - (bottom - top)) / 2.0 - top;
         for (slot, face) in self.lines {
             push(
                 out,

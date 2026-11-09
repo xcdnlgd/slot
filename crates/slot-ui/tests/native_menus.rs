@@ -10,7 +10,7 @@ fn the_about_sticker_fits_a_native_canvas_with_its_margin() {
         "the sticker runs to {x}..{}",
         x + w
     );
-    assert_eq!(sticker_rect(Canvas::FRAMED).2, STICKER_W as f32);
+    assert_eq!(sticker_rect(Canvas::DEFAULT).2, STICKER_W as f32);
 }
 
 #[test]

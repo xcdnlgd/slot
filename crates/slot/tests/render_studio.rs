@@ -5,7 +5,7 @@ mod common;
 use common::{clocked, tmp_root_with_gb_carts};
 use slot::frontend::Frontend;
 use slot::studio::{Row, Screen};
-use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
+use slot_gfx::{Compositor, HeadlessSurface, PANEL_H, PANEL_W};
 use slot_input::{Action, Btn};
 use slot_power::SimPlatform;
 use tempfile::TempDir;
@@ -20,7 +20,7 @@ fn setup() -> Option<(TempDir, Frontend, Compositor, HeadlessSurface)> {
 }
 
 fn px(frame: &[u8], x: usize, y: usize) -> [u8; 3] {
-    let o = (y * OUT_W as usize + x) * 4;
+    let o = (y * PANEL_W as usize + x) * 4;
     [frame[o], frame[o + 1], frame[o + 2]]
 }
 
@@ -50,7 +50,7 @@ fn frame(f: &mut Frontend, c: &mut Compositor, name: &str) -> Vec<u8> {
     let out = c.read_frame();
     if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
         let file = std::fs::File::create(format!("{dir}/studio-{name}.png")).unwrap();
-        let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+        let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
         e.set_color(png::ColorType::Rgba);
         e.set_depth(png::BitDepth::Eight);
         e.write_header().unwrap().write_image_data(&out).unwrap();
@@ -446,7 +446,7 @@ mod apply {
             }
             if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
                 let file = std::fs::File::create(format!("{dir}/apply-{name}.png")).unwrap();
-                let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+                let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
                 e.set_color(png::ColorType::Rgba);
                 e.set_depth(png::BitDepth::Eight);
                 e.write_header().unwrap().write_image_data(&out).unwrap();

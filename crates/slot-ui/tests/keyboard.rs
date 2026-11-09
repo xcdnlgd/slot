@@ -412,7 +412,7 @@ fn a_refusal_reads_brighter_and_larger_than_a_hint() {
         "",
     );
     let alert = hint.clone().alerted();
-    let canvas = slot_ui::Canvas::FRAMED;
+    let canvas = slot_ui::Canvas::DEFAULT;
     let a = slot_ui::keyboard_faces(&alert, canvas).subtitle.unwrap();
     let h = slot_ui::keyboard_faces(&hint, canvas).subtitle.unwrap();
     assert!(brightest(&a) > 0xe0, "{}", brightest(&a));

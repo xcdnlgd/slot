@@ -1,7 +1,5 @@
 use std::sync::OnceLock;
 
-use slot_gfx::OUT_W;
-
 use crate::art::decode_png_bytes;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -23,9 +21,11 @@ pub const CHIP_W: u32 = 59;
 pub const CHIP_H: u32 = 41;
 pub const GB_CHIP_W: u32 = 59;
 pub const GB_CHIP_H: u32 = 92;
-pub const SLOT_W: u32 = OUT_W;
+/// Width of the slot artwork, not a layout coordinate.
+pub const SLOT_W: u32 = 720;
 pub const SLOT_H: u32 = 58;
-pub const PORT_W: u32 = OUT_W;
+/// Width of the port artwork, not a layout coordinate.
+pub const PORT_W: u32 = 720;
 pub const PORT_H: u32 = SLOT_H;
 pub const PLUG_W: u32 = 92;
 pub const PLUG_H: u32 = 244;

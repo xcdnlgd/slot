@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use common::tmp_root_with_carts;
 use slot::frontend::Frontend;
 use slot::wifi::{Fake, Wifi};
-use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
+use slot_gfx::{Compositor, HeadlessSurface, PANEL_H, PANEL_W};
 use slot_input::{Action, Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
 use slot_store::{write_slot_state, SlotState};
@@ -36,7 +36,7 @@ fn composed(f: &mut Frontend, c: &mut Compositor, name: &str) -> Vec<u8> {
     if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
         let path = format!("{dir}/clock-{name}.png");
         let file = std::fs::File::create(&path).expect("create png");
-        let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+        let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
         e.set_color(png::ColorType::Rgba);
         e.set_depth(png::BitDepth::Eight);
         e.write_header()
@@ -48,12 +48,12 @@ fn composed(f: &mut Frontend, c: &mut Compositor, name: &str) -> Vec<u8> {
 }
 
 fn bright(px: &[u8], x: usize, y: usize) -> bool {
-    let at = (y * OUT_W as usize + x) * 4;
+    let at = (y * PANEL_W as usize + x) * 4;
     px[at..at + 3].iter().all(|&c| c > 0xd0)
 }
 
 fn inked_rows(px: &[u8], xs: std::ops::Range<usize>) -> Vec<usize> {
-    (0..(OUT_H as f32 - MOUTH_H) as usize)
+    (0..(PANEL_H as f32 - MOUTH_H) as usize)
         .filter(|&y| xs.clone().any(|x| bright(px, x, y)))
         .collect()
 }
@@ -94,7 +94,7 @@ fn the_clock_is_a_list_of_four_rows_with_the_open_part_underlined() {
 
     tap(&mut f, &mut input, Btn::A);
     let open = composed(&mut f, &mut c, "open");
-    let right = OUT_W as usize - 40;
+    let right = PANEL_W as usize - 40;
     let value_bands = bands(&inked_rows(&open, right - 200..right));
     let underline = value_bands
         .iter()

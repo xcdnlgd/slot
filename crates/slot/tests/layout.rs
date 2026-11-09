@@ -87,18 +87,18 @@ fn the_shelf_menu_does_not_show_a_game() {
 #[test]
 fn every_screen_is_the_framed_canvas_on_a_720_panel() {
     let mut a = app_with_carts(&["Emerald", "Zzz"], (720, 480));
-    assert_eq!(a.canvas(), Canvas::FRAMED);
+    assert_eq!(a.canvas(), Canvas::DEFAULT);
     a.apply(Action::QuickMenu);
-    assert_eq!(a.canvas(), Canvas::FRAMED);
+    assert_eq!(a.canvas(), Canvas::DEFAULT);
     let mut a = playing((720, 480));
-    assert_eq!(a.canvas(), Canvas::FRAMED);
+    assert_eq!(a.canvas(), Canvas::DEFAULT);
     a.apply(Action::QuickMenu);
     for _ in 0..30 {
         tick(&mut a);
     }
     assert_eq!(
         a.canvas(),
-        Canvas::FRAMED,
+        Canvas::DEFAULT,
         "the in-game menu on a 720 panel"
     );
 }
@@ -342,45 +342,5 @@ fn the_hud_spans_a_720_panel() {
     a.apply(Action::BrightnessUp);
     let mut out = Vec::new();
     a.draw(&mut out);
-    assert_eq!(plates(&out), vec![(0.0, Canvas::FRAMED.w)]);
-}
-
-fn strip_at(a: &App, strip: slot_gfx::TexId) -> Option<(f32, f32)> {
-    let mut out = Vec::new();
-    a.draw(&mut out);
-    out.iter().find_map(|d| match *d {
-        Draw::Tex { y, w, tex, .. } if tex == strip => Some((y, w)),
-        _ => None,
-    })
-}
-
-#[test]
-fn the_sp_strip_covers_a_4_by_3_panel_over_a_game_and_drops_on_the_way_out() {
-    let strip = slot_gfx::TexId::from_raw(9_999);
-    let mut a = playing(PANEL_4_3);
-    a.set_sp_strip(Some(strip));
-    assert_eq!(strip_at(&a, strip), Some((0.0, NATIVE.w)));
-    a.apply(Action::Eject);
-    let mut last = 0.0;
-    for _ in 0..200 {
-        tick(&mut a);
-        if let Some((y, _)) = strip_at(&a, strip) {
-            assert!(y >= last, "the strip rose on the way out");
-            last = y;
-        }
-    }
-    assert!(last > 0.0, "the strip never dropped");
-    assert_eq!(strip_at(&a, strip), None);
-}
-
-#[test]
-fn the_in_game_menu_hides_the_sp_strip() {
-    let strip = slot_gfx::TexId::from_raw(9_999);
-    let mut a = playing(PANEL_4_3);
-    a.set_sp_strip(Some(strip));
-    a.apply(Action::QuickMenu);
-    for _ in 0..30 {
-        tick(&mut a);
-    }
-    assert_eq!(strip_at(&a, strip), None);
+    assert_eq!(plates(&out), vec![(0.0, Canvas::DEFAULT.w)]);
 }

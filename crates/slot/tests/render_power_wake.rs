@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use common::{clocked, tmp_root_with_carts};
 use slot::frontend::Frontend;
-use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
+use slot_gfx::{Compositor, HeadlessSurface, PANEL_H, PANEL_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent, POWER_HOLD_MS};
 use slot_power::{Battery, Charge, LedState, Platform, SimPlatform};
 
@@ -70,21 +70,21 @@ impl Platform for RecordingPanel {
 }
 
 fn at(px: &[u8], x: usize, y: usize) -> [u8; 3] {
-    let o = (y * OUT_W as usize + x) * 4;
+    let o = (y * PANEL_W as usize + x) * 4;
     [px[o], px[o + 1], px[o + 2]]
 }
 
 fn all_black(px: &[u8]) -> bool {
-    (0..OUT_H as usize).step_by(7).all(|y| {
-        (0..OUT_W as usize)
+    (0..PANEL_H as usize).step_by(7).all(|y| {
+        (0..PANEL_W as usize)
             .step_by(7)
             .all(|x| at(px, x, y) == [0; 3])
     })
 }
 
 fn any_ink(px: &[u8]) -> bool {
-    (0..OUT_H as usize).step_by(3).any(|y| {
-        (0..OUT_W as usize)
+    (0..PANEL_H as usize).step_by(3).any(|y| {
+        (0..PANEL_W as usize)
             .step_by(3)
             .any(|x| at(px, x, y)[0] > 0x80)
     })
@@ -96,7 +96,7 @@ fn composed(f: &mut Frontend, c: &mut Compositor, name: &str) -> Vec<u8> {
     if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
         let path = format!("{dir}/power-wake-{name}.png");
         let file = std::fs::File::create(&path).expect("create png");
-        let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+        let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
         e.set_color(png::ColorType::Rgba);
         e.set_depth(png::BitDepth::Eight);
         e.write_header()

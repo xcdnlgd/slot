@@ -1,5 +1,5 @@
 use crate::bitmaps::{button_legend, ButtonLegend};
-use crate::draw::{Canvas, Draw, TexId, OUT_H, OUT_W};
+use crate::draw::{Canvas, Draw, TexId};
 use crate::icon::{Icon, WARNING_INK};
 use crate::plate::{blit, word_face, word_ink, UndoFace, CAP_GAP, HINT_EDGE};
 use crate::power_menu::{MENU_H, MENU_INK, MENU_PAD, MENU_PX};
@@ -910,7 +910,6 @@ pub enum QuickValue {
     Level13,
     Level14,
     Level15,
-    SpFrame,
     Integer,
     Fit,
     FullScreen,
@@ -923,7 +922,7 @@ pub enum QuickValue {
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 52] = [
+    pub const ALL: [QuickValue; 51] = [
         QuickValue::Speed1_5,
         QuickValue::Speed2,
         QuickValue::Speed3,
@@ -966,7 +965,6 @@ impl QuickValue {
         QuickValue::Level13,
         QuickValue::Level14,
         QuickValue::Level15,
-        QuickValue::SpFrame,
         QuickValue::Integer,
         QuickValue::Fit,
         QuickValue::FullScreen,
@@ -1056,7 +1054,6 @@ impl QuickValue {
             QuickValue::Level13 => "13",
             QuickValue::Level14 => "14",
             QuickValue::Level15 => "15",
-            QuickValue::SpFrame => "SP Screen",
             QuickValue::Integer => "Integer",
             QuickValue::Fit => "Fit",
             QuickValue::FullScreen => "Fill",
@@ -1120,6 +1117,7 @@ const GROUND_SCRIM: f32 = 0.65;
 pub(crate) const TYPE_DROP: f32 = 4.0;
 pub(crate) const LEGEND_Y: f32 = 427.0;
 pub(crate) const DIM_INK: [u8; 3] = [0x9a, 0x9a, 0xa4];
+const FACE_MAX_W: f32 = 720.0;
 const DESCRIPTION_PX: f32 = 16.0;
 const DESCRIPTION_GAP: f32 = 8.0;
 const PANEL_GAP: f32 = 12.0;
@@ -1249,7 +1247,7 @@ pub(crate) fn quick_text_face(label: &str, colour: [u8; 3]) -> UndoFace {
             h: 0,
         };
     };
-    let layout = text::fit(font, label, OUT_W as f32, 1, MENU_PX, MENU_PX);
+    let layout = text::fit(font, label, FACE_MAX_W, 1, MENU_PX, MENU_PX);
     let set = layout
         .lines
         .iter()
@@ -1315,7 +1313,7 @@ pub fn quick_description_face(lines: &[&str]) -> UndoFace {
     let faces: Vec<(Vec<u8>, u32)> = lines
         .iter()
         .map(|line| {
-            let layout = text::fit(font, line, OUT_W as f32, 1, DESCRIPTION_PX, DESCRIPTION_PX);
+            let layout = text::fit(font, line, FACE_MAX_W, 1, DESCRIPTION_PX, DESCRIPTION_PX);
             let w = text::line_width(font, &layout.lines[0], layout.px, layout.tracking).ceil()
                 as u32
                 + 2;
@@ -1650,7 +1648,7 @@ impl QuickMenu<'_> {
             (false, _) => draw_menu_ground(self.canvas, self.ground, out),
             (true, panel) => {
                 let y = match panel {
-                    true => quick_row_top(self.row.page()[0], self.hidden) - PANEL_GAP,
+                    true => quick_row_top(self.row.page()[0], self.hidden, self.canvas) - PANEL_GAP,
                     false => 0.0,
                 };
                 let bottom = self.footer_top.max(y);
@@ -1678,7 +1676,7 @@ impl QuickMenu<'_> {
         let shown = self.row.shown(self.hidden);
         let (start, len) = quick_window(self.row, self.hidden);
         for row in shown.into_iter().skip(start).take(len) {
-            let y = quick_row_top_at(row, self.row, self.hidden) + TYPE_DROP;
+            let y = quick_row_top_at(row, self.row, self.hidden, self.canvas) + TYPE_DROP;
             let lit = row == self.row;
             let mut label_end = QUICK_LABEL_X;
             if let Some(&(tex, w, h)) = faces.labels.get(row.index()).map(|l| &l[lit as usize]) {
@@ -1737,7 +1735,7 @@ impl QuickMenu<'_> {
                 alpha: 1.0,
             });
         }
-        if let Some(bar) = quick_scroll(self.row, self.hidden) {
+        if let Some(bar) = quick_scroll(self.row, self.hidden, self.canvas) {
             let x = self.canvas.w - SCROLL_INSET - SCROLL_W;
             let ink = DIM_INK.map(|c| f32::from(c) / 255.0);
             out.push(Draw::Rect {
@@ -1757,14 +1755,14 @@ impl QuickMenu<'_> {
             });
         }
         if let Some((tex, w, h)) = self.description {
-            let y = OUT_H as f32 - MOUTH_H - h as f32 - DESCRIPTION_GAP;
+            let y = self.canvas.h - MOUTH_H - h as f32 - DESCRIPTION_GAP;
             push(out, tex, self.canvas.centred(w as f32), y, w, h);
         }
     }
 }
 
 pub fn draw_menu_ground(canvas: Canvas, ground: Option<(TexId, u32)>, out: &mut Vec<Draw>) {
-    let (w, h) = (canvas.w, OUT_H as f32);
+    let (w, h) = (canvas.w, canvas.h);
     match ground {
         Some((tex, tex_w)) => {
             out.push(Draw::Part {
@@ -1838,13 +1836,17 @@ pub fn quick_window(selected: QuickRow, hidden: &[QuickRow]) -> (usize, usize) {
     (start, fits)
 }
 
-pub fn quick_scroll(selected: QuickRow, hidden: &[QuickRow]) -> Option<QuickScroll> {
+pub fn quick_scroll(
+    selected: QuickRow,
+    hidden: &[QuickRow],
+    canvas: Canvas,
+) -> Option<QuickScroll> {
     let shown = selected.shown(hidden);
     let (start, len) = quick_window(selected, hidden);
     if len >= shown.len() {
         return None;
     }
-    let y = quick_row_top_at(shown[start], selected, hidden);
+    let y = quick_row_top_at(shown[start], selected, hidden, canvas);
     let h = QUICK_PITCH * len as f32;
     let thumb_h = h / shown.len() as f32;
     let along = selected.position(hidden) as f32 / (shown.len() - 1) as f32;
@@ -1856,7 +1858,12 @@ pub fn quick_scroll(selected: QuickRow, hidden: &[QuickRow]) -> Option<QuickScro
     })
 }
 
-pub fn quick_row_top_at(row: QuickRow, selected: QuickRow, hidden: &[QuickRow]) -> f32 {
+pub fn quick_row_top_at(
+    row: QuickRow,
+    selected: QuickRow,
+    hidden: &[QuickRow],
+    canvas: Canvas,
+) -> f32 {
     let (start, len) = quick_window(selected, hidden);
     let held = match row.page() == QuickRow::WIFI {
         true => QuickRow::WIFI.len(),
@@ -1864,14 +1871,14 @@ pub fn quick_row_top_at(row: QuickRow, selected: QuickRow, hidden: &[QuickRow]) 
     };
     let rows = QUICK_PITCH * held as f32;
     let top = match row.page() == QuickRow::PLAY_SCREEN {
-        true => OUT_H as f32 - MOUTH_H - PANEL_GAP - rows,
+        true => canvas.h - MOUTH_H - PANEL_GAP - rows,
         false => (LEGEND_Y - rows) / 2.0,
     };
     top + QUICK_PITCH * (row.position(hidden) as f32 - start as f32)
 }
 
-pub fn quick_row_top(row: QuickRow, hidden: &[QuickRow]) -> f32 {
-    quick_row_top_at(row, row, hidden)
+pub fn quick_row_top(row: QuickRow, hidden: &[QuickRow], canvas: Canvas) -> f32 {
+    quick_row_top_at(row, row, hidden, canvas)
 }
 
 fn push(out: &mut Vec<Draw>, tex: TexId, x: f32, y: f32, w: u32, h: u32) {

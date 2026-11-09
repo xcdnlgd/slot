@@ -721,8 +721,7 @@ fn scale_round_trip_and_fall_back() {
         (back.scale_gb, back.scale_gba),
         (Scale::Integer, Scale::FullScreen)
     );
-    assert_eq!(Scale::SpFrame.name(), "sp-frame");
-    assert_eq!(Scale::parse("sp-frame"), Some(Scale::SpFrame));
+    assert_eq!(Scale::parse("sp-frame"), None);
     assert_eq!(Scale::parse("default"), None);
 }
 

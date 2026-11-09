@@ -41,17 +41,8 @@ fn no_shake_is_the_plain_centred_rect() {
 fn a_4_by_3_panel_fills_its_width_from_the_top() {
     assert!(slot_gfx::framed((640, 480)));
     assert!(!slot_gfx::framed((720, 480)));
-    assert_eq!(slot_gfx::screen_rect((640, 480)), (0, 0, 640, 427));
-    assert_eq!(blit_rect((640, 480), 0.0), (0, 53, 640, 427));
-    assert_eq!(blit_rect((1280, 960), 0.0), (0, 107, 1280, 853));
-}
-
-#[test]
-fn the_overlay_drops_by_the_strip_when_it_slides_away() {
-    assert_eq!(slot_gfx::lifted_rect((640, 480), 0.0), (0, 53, 640, 427));
-    assert_eq!(slot_gfx::lifted_rect((640, 480), 1.0), (0, 0, 640, 427));
-    let mid = slot_gfx::lifted_rect((640, 480), 0.5).1;
-    assert!(0 < mid && mid < 53);
+    assert_eq!(blit_rect((640, 480), 0.0), (0, 0, 640, 480));
+    assert_eq!(blit_rect((1280, 960), 0.0), (0, 0, 1280, 960));
 }
 
 #[test]

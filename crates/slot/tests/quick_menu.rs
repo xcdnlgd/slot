@@ -11,8 +11,8 @@ use slot_store::{
     Platform, Scale, Shader, SlotState, WallpaperPick, Zone,
 };
 use slot_ui::{
-    Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MENU_PAD, MOUTH_H, OUT_H,
-    OUT_W,
+    Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MENU_PAD, MOUTH_H, PANEL_H,
+    PANEL_W,
 };
 use tempfile::TempDir;
 
@@ -465,6 +465,7 @@ fn each_systems_frame_blending_steps_off_mix_lcd_ghosting_wraps_and_saves_alone(
 #[test]
 fn each_platform_keeps_its_own_shader_wraps_and_starts_on_grid_and_simpletex() {
     let (d, mut a, _) = on_carousel();
+    a.set_panel((640, 480));
     open_at(&mut a, QuickRow::GbaShader);
     assert_eq!(a.quick_value(QuickRow::GbaShader), Some(QuickValue::Grid));
     assert_eq!(
@@ -960,7 +961,7 @@ fn the_carousel_menu_keeps_the_empty_footer_where_the_shelf_left_it() {
     }
     let parked = strip_y(&a, 78);
     assert!(
-        (parked - (OUT_H as f32 - MOUTH_H)).abs() < 1.0,
+        (parked - (PANEL_H as f32 - MOUTH_H)).abs() < 1.0,
         "the empty mouth is not the carousel strip: {parked}"
     );
     let open = frame(&a);
@@ -975,12 +976,12 @@ fn the_carousel_menu_keeps_the_empty_footer_where_the_shelf_left_it() {
     );
     let (lx, ly, _) = legend_box(&open, 400);
     let (rx, ry, rw) = legend_box(&open, 402);
-    let footer = OUT_H as f32 - MOUTH_H;
+    let footer = PANEL_H as f32 - MOUTH_H;
     assert_eq!((ly, ry), (footer, footer));
     assert!(lx.abs() < 1.0, "Back is not on the left: {lx}");
     let right = rx + rw - HINT_EDGE as f32;
     assert!(
-        (right - OUT_W as f32).abs() < 1.0,
+        (right - PANEL_W as f32).abs() < 1.0,
         "Open is not on the right: {right}"
     );
     assert!(!drawn(&open, 403), "Resume is on the carousel menu");
@@ -994,12 +995,12 @@ fn the_carousel_menu_keeps_the_empty_footer_where_the_shelf_left_it() {
     let values = frame(&a);
     let (lx, ly, _) = legend_box(&values, 400);
     let (rx, ry, rw) = legend_box(&values, 401);
-    let footer = OUT_H as f32 - MOUTH_H;
+    let footer = PANEL_H as f32 - MOUTH_H;
     assert_eq!((ly, ry), (footer, footer));
     assert!(lx.abs() < 1.0, "Back left the left edge: {lx}");
     let right = rx + rw - HINT_EDGE as f32;
     assert!(
-        (right - OUT_W as f32).abs() < 1.0,
+        (right - PANEL_W as f32).abs() < 1.0,
         "Change is not on the right: {right}"
     );
     assert!(!drawn(&values, 79), "the value page seated a cart");
@@ -1397,8 +1398,8 @@ fn black_washes(draws: &[Draw]) -> Vec<f32> {
             Draw::Rect { x, y, w, h, colour }
                 if *x == 0.0
                     && *y == 0.0
-                    && *w == OUT_W as f32
-                    && *h == slot_ui::OUT_H as f32
+                    && *w == PANEL_W as f32
+                    && *h == slot_ui::PANEL_H as f32
                     && colour[..3] == [0.0; 3] =>
             {
                 Some(colour[3])
@@ -1529,7 +1530,6 @@ fn a_wide_panel_offers_gb_and_gbc_frames_from_none_through_the_card() {
     assert_eq!(a.resolved_bezel(Platform::Gb), BezelPick::None);
     press(&mut a, Btn::Down);
     assert_eq!(a.quick_menu(), Some(QuickRow::GbcScale));
-    assert!(!a.sp_frame());
 }
 
 #[test]
@@ -1543,11 +1543,9 @@ fn a_four_by_three_panel_keeps_ags_102_until_another_frame_is_picked() {
             "{platform:?}"
         );
     }
-    assert!(a.sp_frame());
     open_at(&mut a, QuickRow::GbaBezel);
     press(&mut a, Btn::Right);
     assert_eq!(a.resolved_bezel(Platform::Gba), BezelPick::None);
-    assert!(!a.sp_frame());
     press(&mut a, Btn::Right);
     assert_eq!(a.resolved_bezel(Platform::Gba), BezelPick::Ags102);
     while a.quick_menu().is_some() {
@@ -1576,7 +1574,6 @@ fn gba_frames_from_the_card_show_only_on_a_four_by_three_panel() {
         a.resolved_bezel(Platform::Gba),
         BezelPick::File("Classic.png".into())
     );
-    assert!(!a.sp_frame());
     assert_eq!(
         read_slot_state(d.path()).bezel_gba,
         BezelPick::File("Classic.png".into())

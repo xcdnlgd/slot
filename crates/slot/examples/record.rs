@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use slot::frontend::Frontend;
-use slot_gfx::{blue_light_gain, dim_gain, Compositor, HeadlessSurface, OUT_H, OUT_W};
+use slot_gfx::{blue_light_gain, dim_gain, Compositor, HeadlessSurface, PANEL_H, PANEL_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
 
@@ -31,7 +31,7 @@ impl Clip {
     fn start(path: String) -> Clip {
         let mut ffmpeg = Command::new("ffmpeg")
             .args(["-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba"])
-            .args(["-s", &format!("{OUT_W}x{OUT_H}"), "-r", "60", "-i", "-"])
+            .args(["-s", &format!("{PANEL_W}x{PANEL_H}"), "-r", "60", "-i", "-"])
             .args(["-c:v", "libx264", "-preset", "slow", "-crf", "20"])
             .args(["-pix_fmt", "yuv420p", "-movflags", "+faststart", &path])
             .stdin(Stdio::piped())

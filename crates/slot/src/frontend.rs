@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use slot_gfx::{Compositor, Draw, ScreenEffect, TexId, OUT_H, OUT_W};
+use slot_gfx::{Compositor, Draw, ScreenEffect, TexId};
 
 const PAPER: &[u8] = include_bytes!("../assets/paper.png");
 use crate::shot_loader::{ShotLoader, Want};
@@ -9,10 +9,10 @@ use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::{format_stamp, BezelPick, Platform as Console};
 use slot_ui::{
-    badge_face, bare_board_face, bezel_face, cart_shadow, chip_face, chip_face_text,
-    chip_shadow_face, core_button_legends, date_time_text, default_game_bezel_face, delete_legends,
-    footer_ink, game_bezel_face, gb_cart_shadow, hint_face, icon_face, link_button_legends,
-    menu_detail_face, menu_face, padded, photo_face, prompt_legends, quick_description_face,
+    badge_face, bare_board_face, cart_shadow, chip_face, chip_face_text, chip_shadow_face,
+    core_button_legends, date_time_text, default_game_bezel_face, delete_legends, footer_ink,
+    game_bezel_face, gb_cart_shadow, hint_face, icon_face, link_button_legends, menu_detail_face,
+    menu_face, padded, photo_face, prompt_legends, quick_description_face,
     quick_external_value_face, quick_label_face, quick_legend_faces, quick_pointer_face,
     quick_value_face, quick_warning_value_face, rebuild_count_face, rebuild_title_face,
     repair_legends, shader_toast_face, slot_back, slot_back_light, slot_front, slot_front_light,
@@ -609,12 +609,18 @@ impl Frontend {
             link_shot_size: (0, 0),
             link_shot_shown: false,
             external_path: None,
-            panel: (OUT_W, OUT_H),
+            panel: slot_gfx::DEFAULT_PANEL,
         }
     }
 
     pub fn set_panel(&mut self, panel: (u32, u32)) {
         self.panel = panel;
+        self.session.app_mut().set_panel(panel);
+    }
+
+    /// Kept for old callers: panel-size is now the only bezel setup needed.
+    pub fn upload_bezel(&mut self, _compositor: &mut Compositor, panel: (u32, u32)) {
+        self.set_panel(panel);
     }
 
     fn upload_paper(compositor: &mut Compositor) {
@@ -794,10 +800,10 @@ impl Frontend {
         let Some(rgba) = slot_ui::default_background() else {
             return;
         };
-        let id = compositor.create_texture(OUT_W, OUT_H, rgba);
+        let id = compositor.create_texture(slot_ui::BACKGROUND_W, slot_ui::BACKGROUND_H, rgba);
         self.session.app_mut().set_ground(id);
         if let Some(rgba) = slot_ui::blur_background() {
-            let id = compositor.create_texture(OUT_W, OUT_H, rgba);
+            let id = compositor.create_texture(slot_ui::BACKGROUND_W, slot_ui::BACKGROUND_H, rgba);
             self.session.app_mut().set_blur(id);
         }
     }
@@ -999,27 +1005,6 @@ impl Frontend {
         app.set_toast_faces(toasts);
     }
 
-    pub fn upload_bezel(&mut self, compositor: &mut Compositor, panel: (u32, u32)) {
-        self.panel = panel;
-        self.session.app_mut().set_panel(panel);
-        if !slot_gfx::framed(panel) {
-            return;
-        }
-        let Some(path) = self
-            .session
-            .app()
-            .root()
-            .and_then(|root| crate::bezel::pick(root, panel))
-        else {
-            return;
-        };
-        if let Some(rgba) = bezel_face(&path, panel.0, panel.1) {
-            let tex = compositor.create_texture(panel.0, panel.1, &rgba);
-            self.session.app_mut().set_sp_strip(Some(tex));
-            eprintln!("slot: bezel {}", path.display());
-        }
-    }
-
     pub fn render(&mut self, compositor: &mut Compositor, window: (u32, u32)) {
         let panel = compositor.panel_size(window);
         self.panel = panel;
@@ -1102,7 +1087,7 @@ impl Frontend {
         compositor.set_screen_power(self.session.app().screen_power());
         compositor.set_screen_footer(self.session.app().screen_footer());
         compositor.set_game_source_rect(self.session.app().source_rect());
-        compositor.set_game_layout(self.session.app().game_layout());
+        compositor.set_game_size(self.session.app().game_size());
         self.grab_link_shot(compositor);
         compositor.begin_frame();
         if self.draw_rebuild(compositor) {
@@ -1150,8 +1135,8 @@ impl Frontend {
         sync_picking(self.session.app_mut(), compositor, &mut self.picking_faces);
         sync_game_bezel(self.session.app_mut(), compositor, &mut self.game_bezel);
         compositor.set_game_bezel(self.session.app().shown_game_bezel());
-        compositor.set_sp_frame(self.session.app().picture_on_top());
-        compositor.set_game_offset(self.session.app().game_offset_px());
+        compositor.set_game_size(self.session.app().game_size());
+        compositor.set_game_offset(self.session.app().game_offset());
         sync_core_picker(
             self.session.app_mut(),
             compositor,
@@ -1953,7 +1938,11 @@ fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut Bezel
     let shown = (platform, pick, art, (w, h));
     if state.image.as_ref() != Some(&shown) {
         let rgba = match &shown.1 {
-            BezelPick::None | BezelPick::Ags102 => None,
+            BezelPick::None => None,
+            BezelPick::Ags102 => app
+                .root()
+                .and_then(|root| crate::bezel::pick(root, (w, h)))
+                .and_then(|path| game_bezel_face(&path, w, h)),
             BezelPick::Default => shown
                 .2
                 .and_then(|kind| default_game_bezel_face(platform == Console::Gbc, kind, w, h)),
@@ -1966,10 +1955,9 @@ fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut Bezel
                 })
                 .and_then(|path| game_bezel_face(&path, w, h)),
         };
-        app.set_bezel_column(
+        app.set_bezel_hole(
             rgba.as_deref()
-                .map(|rgba| slot_gfx::bezel_column(rgba, (w, h)))
-                .unwrap_or_default(),
+                .and_then(|rgba| slot_gfx::hole(rgba, (w, h))),
         );
         let tex = rgba.map(|rgba| match state.tex {
             Some(id) => {

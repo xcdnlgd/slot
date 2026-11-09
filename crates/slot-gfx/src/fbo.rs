@@ -4,7 +4,9 @@ use crate::grade::{blue_light_gain, contrast_boost, dim_gain, saturation_boost};
 use crate::pipeline::GamePass;
 use crate::quad::Quad;
 use crate::shaders::{BLIT_FRAG, BLIT_VERT, TURN_VERT};
-use crate::surface::{blit_panel_rect, blit_rect, GfxError, Surface, OUT_H, OUT_W};
+use crate::surface::{
+    blit_panel_rect, blit_rect, GfxError, Surface, DEFAULT_PANEL_H, DEFAULT_PANEL_W,
+};
 use crate::Canvas;
 
 pub const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
@@ -38,13 +40,11 @@ pub struct Compositor {
     game: GamePass,
     sprites: Sprites,
     game_bezel: Option<TexId>,
-    sp_frame: bool,
-    game_panel: bool,
-    game_layout: [f32; 4],
     game_fbo: gl::types::GLuint,
     game_tex: gl::types::GLuint,
+    game_tex_size: (u32, u32),
     game_size: (u32, u32),
-    game_offset: i32,
+    game_offset: (i32, i32),
     external: Option<ExternalProgram>,
     external_linear: bool,
     turn: Option<Turn>,
@@ -55,7 +55,14 @@ impl Compositor {
     pub fn new(surface: &dyn Surface) -> Result<Self, GfxError> {
         crate::gl::load(surface);
         let blit = crate::shaders::program(BLIT_VERT, BLIT_FRAG)?;
-        let tex = crate::gl::texture(OUT_W, OUT_H, gl::NEAREST, gl::CLAMP_TO_EDGE, gl::RGBA, None);
+        let tex = crate::gl::texture(
+            DEFAULT_PANEL_W,
+            DEFAULT_PANEL_H,
+            gl::NEAREST,
+            gl::CLAMP_TO_EDGE,
+            gl::RGBA,
+            None,
+        );
         unsafe {
             let mut fbo = 0;
             gl::GenFramebuffers(1, &mut fbo);
@@ -86,7 +93,7 @@ impl Compositor {
             Ok(Compositor {
                 fbo,
                 tex,
-                size: (OUT_W, OUT_H),
+                size: (DEFAULT_PANEL_W, DEFAULT_PANEL_H),
                 blit,
                 u_gain,
                 u_saturation,
@@ -97,20 +104,18 @@ impl Compositor {
                 saturation: saturation_boost(0),
                 contrast: contrast_boost(0),
                 shake: 0.0,
-                window: (OUT_W, OUT_H),
+                window: (DEFAULT_PANEL_W, DEFAULT_PANEL_H),
                 panel: None,
                 screen: 0.0,
                 quad: Quad::new(),
                 game: GamePass::new()?,
                 sprites: Sprites::new()?,
                 game_bezel: None,
-                sp_frame: true,
-                game_panel: false,
-                game_layout: [0.0, 0.0, OUT_W as f32, OUT_H as f32],
                 game_fbo: 0,
                 game_tex: 0,
-                game_size: (0, 0),
-                game_offset: 0,
+                game_tex_size: (0, 0),
+                game_size: (DEFAULT_PANEL_W, DEFAULT_PANEL_H),
+                game_offset: (0, 0),
                 external: None,
                 external_linear: false,
                 turn: None,
@@ -229,18 +234,12 @@ impl Compositor {
         self.game_bezel = tex;
     }
 
-    pub fn set_sp_frame(&mut self, on: bool) {
-        self.sp_frame = on;
+    pub fn set_game_size(&mut self, size: crate::GameSize) {
+        self.game_size = (size.w, size.h);
     }
 
-    pub fn set_game_layout(&mut self, layout: crate::GameLayout) {
-        self.game_panel = layout.panel;
-        self.game_layout = layout.rect;
-        self.game.set_layout(layout.rect);
-    }
-
-    pub fn set_game_offset(&mut self, y: i32) {
-        self.game_offset = y;
+    pub fn set_game_offset(&mut self, offset: (i32, i32)) {
+        self.game_offset = offset;
     }
 
     pub fn set_external_source(&mut self, source: Option<ShaderSource>) -> Result<(), GfxError> {
@@ -424,10 +423,6 @@ impl Compositor {
         self.resize(size);
         self.sprites
             .set_target(Canvas::of(self.panel_size(self.window)));
-        self.game.set_fbo_scale(
-            self.size.0 as f32 / OUT_W as f32,
-            self.size.1 as f32 / OUT_H as f32,
-        );
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo);
             gl::Viewport(0, 0, self.size.0 as i32, self.size.1 as i32);
@@ -519,13 +514,15 @@ impl Compositor {
 
 impl Compositor {
     fn game_rect_px(&self) -> (i32, i32, i32, i32) {
-        let layout = crate::GameLayout {
-            panel: self.game_panel,
-            rect: self.game_layout,
-        };
-        let (x, y, w, h) = crate::panel_game_rect(self.size, layout);
+        let (w, h) = (self.game_size.0 as i32, self.game_size.1 as i32);
+        let max_x = (self.size.0 as i32 - w).max(0);
         let max_y = (self.size.1 as i32 - h).max(0);
-        (x, (y + self.game_offset).clamp(0, max_y), w, h)
+        (
+            self.game_offset.0.clamp(0, max_x),
+            self.game_offset.1.clamp(0, max_y),
+            w,
+            h,
+        )
     }
 
     fn draw_external(&mut self) {
@@ -547,7 +544,7 @@ impl Compositor {
     }
 
     fn ensure_game_rect(&mut self, size: (u32, u32)) {
-        if self.game_size == size {
+        if self.game_tex_size == size {
             return;
         }
         let tex = crate::gl::texture(
@@ -580,12 +577,12 @@ impl Compositor {
                 gl::DeleteTextures(1, &tex);
                 self.game_fbo = 0;
                 self.game_tex = 0;
-                self.game_size = (0, 0);
+                self.game_tex_size = (0, 0);
                 return;
             }
             self.game_fbo = fbo;
             self.game_tex = tex;
-            self.game_size = size;
+            self.game_tex_size = size;
         }
     }
 
@@ -599,7 +596,6 @@ impl Compositor {
         if self.game_fbo == 0 {
             return;
         }
-        let full_layout = self.game_layout == [0.0, 0.0, OUT_W as f32, OUT_H as f32];
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, self.game_fbo);
             gl::Viewport(0, 0, w, h);
@@ -608,19 +604,8 @@ impl Compositor {
             gl::Clear(gl::COLOR_BUFFER_BIT);
         }
         self.game.set_target(w as f32, h as f32);
-        self.game
-            .set_fbo_scale(w as f32 / OUT_W as f32, h as f32 / OUT_H as f32);
-        self.game.set_layout([0.0, 0.0, w as f32, h as f32]);
-        self.game.set_layout_full(full_layout);
         self.game.set_origin(0.0, 0.0);
         draw(self);
-        self.game.set_origin(0.0, 0.0);
-        self.game.set_layout(self.game_layout);
-        self.game.set_target(OUT_W as f32, OUT_H as f32);
-        self.game.set_fbo_scale(
-            self.size.0 as f32 / OUT_W as f32,
-            self.size.1 as f32 / OUT_H as f32,
-        );
         let y = self.size.1 as i32 - top - h;
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo);
@@ -650,8 +635,11 @@ impl Compositor {
 pub fn canvas_size(window: (u32, u32)) -> (u32, u32) {
     let (_, _, w, h) = blit_rect(window, 0.0);
     let (w, h) = (w.max(1) as u32, h.max(1) as u32);
-    if w % OUT_W == 0 && h % OUT_H == 0 && w / OUT_W == h / OUT_H {
-        (OUT_W, OUT_H)
+    if w % DEFAULT_PANEL_W == 0
+        && h % DEFAULT_PANEL_H == 0
+        && w / DEFAULT_PANEL_W == h / DEFAULT_PANEL_H
+    {
+        (DEFAULT_PANEL_W, DEFAULT_PANEL_H)
     } else {
         (w, h)
     }

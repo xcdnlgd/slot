@@ -1,7 +1,7 @@
 use slot_input::Btn;
 
 use crate::bitmaps::ButtonLegend;
-use crate::draw::{Canvas, Draw, TexId, OUT_H};
+use crate::draw::{Canvas, Draw, TexId};
 use crate::guide::{draw_help_screen, help_rows_face, GUIDE_HELP_HINT};
 use crate::hud::footer_ink;
 use crate::icon::{icon_coverage, Icon};
@@ -829,7 +829,7 @@ pub fn draw_keyboard(
 }
 
 pub fn draw_keyboard_legends(canvas: Canvas, faces: &KeyboardTex, out: &mut Vec<Draw>) {
-    let y = OUT_H as f32 - MOUTH_H;
+    let y = canvas.h - MOUTH_H;
     let [(cancel, cw, _), (done, dw, _)] = faces.legends;
     for (tex, w, x) in [
         (cancel, cw, 0.0),

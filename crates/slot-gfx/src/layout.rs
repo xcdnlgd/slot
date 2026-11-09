@@ -1,6 +1,3 @@
-use crate::bezel::framed;
-use crate::surface::{OUT_H, OUT_W};
-
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Canvas {
     pub w: f32,
@@ -8,18 +5,16 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub const FRAMED: Canvas = Canvas {
-        w: OUT_W as f32,
-        h: OUT_H as f32,
-    };
+    /// Fallback canvas for tests and construction before a panel is known.
+    pub const DEFAULT: Canvas = Canvas { w: 720.0, h: 480.0 };
 
     pub fn of(panel: (u32, u32)) -> Canvas {
-        match framed(panel) {
-            true => Canvas {
-                w: (OUT_H * panel.0 / panel.1) as f32,
-                h: OUT_H as f32,
-            },
-            false => Canvas::FRAMED,
+        if panel.0 == 0 || panel.1 == 0 {
+            return Canvas::DEFAULT;
+        }
+        Canvas {
+            w: panel.0 as f32,
+            h: panel.1 as f32,
         }
     }
 

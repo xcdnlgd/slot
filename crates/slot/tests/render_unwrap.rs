@@ -14,7 +14,7 @@ use slot::unwrap_scene::{
     UnwrapTextures,
 };
 use slot::wifi::{Fake, Wifi};
-use slot_gfx::{Canvas, Compositor, Draw, HeadlessSurface, TexId, OUT_H, OUT_W};
+use slot_gfx::{Canvas, Compositor, Draw, HeadlessSurface, TexId, PANEL_H, PANEL_W};
 use slot_input::{Action, Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
 use slot_store::Platform;
@@ -48,7 +48,7 @@ fn rig() -> Option<Rig> {
     let art = unwrap_art().unwrap();
     let tex = UnwrapTextures::upload(&mut c, &art);
     let ground = c.create_texture(1, 1, &[GROUND[0], GROUND[1], GROUND[2], 255]);
-    let wood = c.create_texture(OUT_W, OUT_H, default_background().unwrap());
+    let wood = c.create_texture(PANEL_W, PANEL_H, default_background().unwrap());
     let cart = c.create_texture(1, 1, &[CART[0], CART[1], CART[2], 255]);
     let mut face = |p: Platform| {
         let (w, h) = box_size(p);
@@ -85,7 +85,7 @@ fn save(name: &str, w: u32, px: &[u8]) {
     };
     std::fs::create_dir_all(&dir).unwrap();
     let file = std::fs::File::create(format!("{dir}/{name}.png")).unwrap();
-    let mut e = png::Encoder::new(std::io::BufWriter::new(file), w, OUT_H);
+    let mut e = png::Encoder::new(std::io::BufWriter::new(file), w, PANEL_H);
     e.set_color(png::ColorType::Rgba);
     e.set_depth(png::BitDepth::Eight);
     let opaque: Vec<u8> = px
@@ -97,14 +97,14 @@ fn save(name: &str, w: u32, px: &[u8]) {
 
 impl Rig {
     fn shot(&mut self, f: &UnwrapFrame, p: Platform, window: u32, under: TexId) -> Vec<u8> {
-        let canvas = Canvas::of((window, OUT_H));
-        self.c.fit((window, OUT_H));
+        let canvas = Canvas::of((window, PANEL_H));
+        self.c.fit((window, PANEL_H));
         let cart = self.cart;
         let mut d = vec![Draw::Tex {
             x: 0.0,
             y: 0.0,
-            w: OUT_W as f32,
-            h: OUT_H as f32,
+            w: PANEL_W as f32,
+            h: PANEL_H as f32,
             tex: under,
             alpha: 1.0,
         }];
@@ -139,15 +139,15 @@ impl Rig {
     }
 
     fn face_shot(&mut self, i: usize, p: Platform) -> Vec<u8> {
-        let canvas = Canvas::FRAMED;
-        self.c.fit((OUT_W, OUT_H));
+        let canvas = Canvas::DEFAULT;
+        self.c.fit((PANEL_W, PANEL_H));
         let (w, h) = box_size(p);
         let d = [
             Draw::Tex {
                 x: 0.0,
                 y: 0.0,
-                w: OUT_W as f32,
-                h: OUT_H as f32,
+                w: PANEL_W as f32,
+                h: PANEL_H as f32,
                 tex: self.ground,
                 alpha: 1.0,
             },
@@ -171,14 +171,14 @@ fn box_sits_in_the_cart_box() {
     let Some(mut r) = rig() else {
         return;
     };
-    let w = OUT_W as usize;
+    let w = PANEL_W as usize;
     for (i, p) in [Platform::Gba, Platform::Gb].into_iter().enumerate() {
         let (bw, bh) = box_size(p);
         let (cw, ch) = cart_box(p);
         assert!(bw <= cw, "{p:?}");
         let foot = foot_y(ch as f32) as usize;
         let px = r.face_shot(i, p);
-        save(&format!("face-{p:?}"), OUT_W, &px);
+        save(&format!("face-{p:?}"), PANEL_W, &px);
         let mid = w / 2;
         assert!(
             purple(at(&px, w, mid, foot - 4)),
@@ -198,18 +198,18 @@ fn the_scene_opens_on_exactly_the_shelf_face() {
     let Some(mut r) = rig() else {
         return;
     };
-    let w = OUT_W as usize;
+    let w = PANEL_W as usize;
     for (i, p) in [Platform::Gba, Platform::Gb].into_iter().enumerate() {
         let still = UnwrapFrame {
             shake: 0.0,
             ..UnwrapScene::new(0).frame(0)
         };
         let ground = r.ground;
-        let scene = r.shot(&still, p, OUT_W, ground);
+        let scene = r.shot(&still, p, PANEL_W, ground);
         let shelf = r.face_shot(i, p);
         let mut worst = 0;
         let (mut off, mut total) = (0, 0);
-        for y in 0..OUT_H as usize {
+        for y in 0..PANEL_H as usize {
             for x in 0..w {
                 let (a, b) = (at(&scene, w, x, y), at(&shelf, w, x, y));
                 if a == GROUND && b == GROUND {
@@ -236,7 +236,7 @@ fn cart_stays_behind_the_front_wall() {
     let Some(mut r) = rig() else {
         return;
     };
-    for window in [OUT_W, 640] {
+    for window in [PANEL_W, 640] {
         let w = window as usize;
         for p in [Platform::Gba, Platform::Gb] {
             let px = r.at_ms(900, p, window, &format!("wall-{p:?}-{window}"));
@@ -254,7 +254,7 @@ fn cart_stays_behind_the_front_wall() {
                 );
             }
             let frame = UnwrapScene::new(0).frame(900);
-            let [_, top, _, _] = cart_rect(frame.cart.unwrap(), p, Canvas::of((window, OUT_H)));
+            let [_, top, _, _] = cart_rect(frame.cart.unwrap(), p, Canvas::of((window, PANEL_H)));
             let above = (top + 3.0) as usize;
             if above + 1 < rim {
                 assert!(
@@ -272,13 +272,13 @@ fn nothing_draws_over_the_footer() {
     let Some(mut r) = rig() else {
         return;
     };
-    let w = OUT_W as usize;
+    let w = PANEL_W as usize;
     let top = footer_top() as usize;
     for p in [Platform::Gba, Platform::Gb] {
         for ms in (0..=2220).step_by(20) {
             let ground = r.ground;
-            let px = r.shot(&UnwrapScene::new(0).frame(ms), p, OUT_W, ground);
-            for y in top..OUT_H as usize {
+            let px = r.shot(&UnwrapScene::new(0).frame(ms), p, PANEL_W, ground);
+            for y in top..PANEL_H as usize {
                 for x in (0..w).step_by(7) {
                     assert_eq!(at(&px, w, x, y), GROUND, "{p:?} {ms} ms at {x},{y}");
                 }
@@ -292,14 +292,14 @@ fn glow_is_gone_before_the_cart_lands() {
     let Some(mut r) = rig() else {
         return;
     };
-    let w = OUT_W as usize;
-    let lit = r.at_ms(800, Platform::Gba, OUT_W, "glow");
+    let w = PANEL_W as usize;
+    let lit = r.at_ms(800, Platform::Gba, PANEL_W, "glow");
     assert_ne!(at(&lit, w, w / 2 - 120, 150), GROUND);
-    let px = r.at_ms(1800, Platform::Gba, OUT_W, "glow");
+    let px = r.at_ms(1800, Platform::Gba, PANEL_W, "glow");
     let [x, y, cw, ch] = cart_rect(
         UnwrapScene::new(0).frame(1800).cart.unwrap(),
         Platform::Gba,
-        Canvas::FRAMED,
+        Canvas::DEFAULT,
     );
     for py in 0..footer_top() as usize {
         for px_x in (0..w).step_by(5) {
@@ -321,7 +321,7 @@ fn every_keyframe_renders() {
     };
     for ms in [0, 130, 700, 1000, 1380, 1500, 2000, 2220] {
         r.at_ms(ms, Platform::Gba, 640, "gba-640");
-        r.at_ms(ms, Platform::Gba, OUT_W, "gba-720");
+        r.at_ms(ms, Platform::Gba, PANEL_W, "gba-720");
         r.at_ms(ms, Platform::Gb, 640, "gb-640");
     }
 }
@@ -356,7 +356,7 @@ fn a_gift_unwraps_on_the_real_shelf() {
         tick(&mut f, &mut input, vec![RawEvent::Down(Btn::Right)]);
         tick(&mut f, &mut input, vec![RawEvent::Up(Btn::Right)]);
     }
-    let w = OUT_W as usize;
+    let w = PANEL_W as usize;
     let foot = foot_y(cart_box(Platform::Gba).1 as f32) as usize;
     let mut built = false;
     for _ in 0..400 {
@@ -373,7 +373,7 @@ fn a_gift_unwraps_on_the_real_shelf() {
         tick(&mut f, &mut input, Vec::new());
     }
     f.compose(&mut c);
-    save("real-box", OUT_W, &c.read_frame());
+    save("real-box", PANEL_W, &c.read_frame());
     tick(&mut f, &mut input, vec![RawEvent::Down(Btn::A)]);
     tick(&mut f, &mut input, vec![RawEvent::Up(Btn::A)]);
     assert!(
@@ -392,7 +392,7 @@ fn a_gift_unwraps_on_the_real_shelf() {
             let at_ms = shots.remove(0);
             f.compose(&mut c);
             let px = c.read_frame();
-            save(&format!("real-{at_ms}"), OUT_W, &px);
+            save(&format!("real-{at_ms}"), PANEL_W, &px);
             if at_ms == 2000 {
                 assert!(!purple(at(&px, w, w / 2, foot + 20)));
             }
@@ -406,7 +406,7 @@ fn a_gift_unwraps_on_the_real_shelf() {
         .browsed_rom()
         .is_some_and(|r| r.to_string_lossy().contains(STEM)));
     f.compose(&mut c);
-    save("real-2220", OUT_W, &c.read_frame());
+    save("real-2220", PANEL_W, &c.read_frame());
 }
 
 #[derive(Clone, Default)]

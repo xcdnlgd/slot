@@ -2,7 +2,7 @@ mod common;
 
 use common::{tmp_root_with_carts, tmp_root_with_gb_carts, tmp_root_with_gbc_carts, StubSnapshot};
 use slot::app::{App, Phase};
-use slot_gfx::{GameLayout, WHOLE_TEXTURE};
+use slot_gfx::WHOLE_TEXTURE;
 use slot_input::{Action, Btn};
 use slot_store::{read_slot_state, write_slot_state, BezelPick, Platform, Scale, SlotState};
 use slot_ui::{BezelArt, QuickRow, QuickValue};
@@ -58,26 +58,24 @@ fn defaults_fit_each_platform_the_way_it_should() {
     for panel in [(720, 480), (640, 480)] {
         for platform in [Platform::Gba, Platform::Gb, Platform::Gbc] {
             let (_d, a) = playing(platform, panel, SlotState::default());
+            let size = a.game_size();
+            let offset = a.game_offset();
             let want = match (platform, panel) {
-                (Platform::Gba, _) => GameLayout::BAND,
-                (_, (720, 480)) => GameLayout {
-                    panel: false,
-                    rect: [120.0, 24.0, 480.0, 432.0],
-                },
-                _ => GameLayout {
-                    panel: true,
-                    rect: [90.0, 24.0, 540.0, 432.0],
-                },
+                (Platform::Gba, (720, 480)) => ((720, 480), (0, 0)),
+                (Platform::Gba, _) => ((640, 427), (0, 26)),
+                (_, (720, 480)) => ((480, 432), (120, 24)),
+                _ => ((480, 432), (80, 24)),
             };
-            assert_eq!(a.game_layout(), want, "{platform:?} {panel:?}");
+            assert_eq!((size.w, size.h), want.0, "{platform:?} {panel:?}");
+            assert_eq!(offset, want.1, "{platform:?} {panel:?}");
             assert_eq!(a.source_rect(), WHOLE_TEXTURE, "{platform:?} {panel:?}");
         }
     }
 }
 
 #[test]
-fn gb_integer_on_4_by_3_takes_the_panel_and_drops_the_strip() {
-    let (_d, mut a) = playing(
+fn gb_integer_on_4_by_3_uses_the_whole_panel_height() {
+    let (_d, a) = playing(
         Platform::Gb,
         (640, 480),
         SlotState {
@@ -86,18 +84,9 @@ fn gb_integer_on_4_by_3_takes_the_panel_and_drops_the_strip() {
             ..SlotState::default()
         },
     );
-    assert!(a.game_layout().panel);
+    assert_eq!((a.game_size().w, a.game_size().h), (480, 432));
+    assert_eq!(a.game_offset(), (80, 24));
     assert_eq!(a.source_rect(), WHOLE_TEXTURE);
-    assert!(!a.sp_frame());
-    a.apply(Action::Eject);
-    for _ in 0..600 {
-        assert!(!a.sp_frame(), "the strip came back during {:?}", a.phase());
-        a.update(1.0 / 60.0);
-        if matches!(a.phase(), Phase::Shelf) {
-            break;
-        }
-    }
-    assert!(matches!(a.phase(), Phase::Shelf), "{:?}", a.phase());
 }
 
 #[test]
@@ -110,16 +99,11 @@ fn gba_video_follows_the_gba_scale() {
             ..SlotState::default()
         },
     );
-    assert!(a.game_layout().panel);
-    let (_d, a) = playing(
-        Platform::Gbav,
-        (640, 480),
-        SlotState {
-            scale_gb: Scale::Integer,
-            ..SlotState::default()
-        },
-    );
-    assert_eq!(a.game_layout(), GameLayout::BAND);
+    assert_eq!((a.game_size().w, a.game_size().h), (640, 480));
+    assert_eq!(a.game_offset(), (0, 0));
+    let (_d, a) = playing(Platform::Gbav, (640, 480), SlotState::default());
+    assert_eq!((a.game_size().w, a.game_size().h), (640, 427));
+    assert_eq!(a.game_offset(), (0, 26));
 }
 
 #[test]
@@ -197,13 +181,8 @@ fn a_saved_integer_on_3_by_2_draws_the_integer_rect() {
             ..SlotState::default()
         },
     );
-    assert_eq!(
-        a.game_layout(),
-        GameLayout {
-            panel: false,
-            rect: [120.0, 24.0, 480.0, 432.0],
-        }
-    );
+    assert_eq!((a.game_size().w, a.game_size().h), (480, 432));
+    assert_eq!(a.game_offset(), (120, 24));
     assert_eq!(a.source_rect(), WHOLE_TEXTURE);
 }
 
@@ -256,12 +235,7 @@ fn bezels_in(
     (shown, a.resolved_bezel(platform))
 }
 
-const ALL: [&str; 4] = [
-    "Shell_fit.png",
-    "Shell_integer.png",
-    "Shell_spscreen.png",
-    "Wood.png",
-];
+const ALL: [&str; 3] = ["Shell_fit.png", "Shell_integer.png", "Wood.png"];
 
 #[test]
 fn a_custom_bezel_hole_centres_the_game_rect() {
@@ -277,10 +251,8 @@ fn a_custom_bezel_hole_centres_the_game_rect() {
     let dir = d.path().join("Bezels/GBA");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("stock.png"), b"").unwrap();
-    let mut column = vec![255u8; 480];
-    column[26..453].fill(0);
-    a.set_bezel_column(column);
-    assert_eq!(a.game_offset_px(), 26);
+    a.set_bezel_hole(Some((0, 26, 640, 427)));
+    assert_eq!(a.game_offset(), (0, 26));
 }
 
 #[test]
@@ -297,10 +269,8 @@ fn a_gbc_bezel_hole_centres_the_integer_rect() {
     let dir = d.path().join("Bezels/GBC");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("gbc_int_ant.png"), b"").unwrap();
-    let mut column = vec![255u8; 480];
-    column[27..453].fill(0);
-    a.set_bezel_column(column);
-    assert_eq!(a.game_offset_px(), 0);
+    a.set_bezel_hole(Some((83, 27, 474, 426)));
+    assert_eq!(a.game_offset(), (80, 24));
 }
 
 #[test]
@@ -314,18 +284,12 @@ fn no_bezel_centres_the_game_rect() {
             ..SlotState::default()
         },
     );
-    assert_eq!(a.game_offset_px(), 26);
+    assert_eq!(a.game_offset(), (0, 26));
 }
 
 #[test]
 fn the_bezel_list_holds_plain_bezels_and_those_for_the_scale() {
     for (platform, panel, scale, want) in [
-        (
-            Platform::Gb,
-            (640, 480),
-            Scale::SpFrame,
-            ["Shell_integer.png", "Wood.png"],
-        ),
         (
             Platform::Gb,
             (640, 480),
@@ -358,7 +322,7 @@ fn the_bezel_list_holds_plain_bezels_and_those_for_the_scale() {
 
 #[test]
 fn a_plain_bezel_stays_picked_in_every_scale() {
-    for scale in [Scale::SpFrame, Scale::Integer, Scale::Fit] {
+    for scale in [Scale::Integer, Scale::Fit, Scale::FullScreen] {
         let (_, pick) = bezels_in(Platform::Gb, (640, 480), scale, "Wood.png", &ALL);
         assert_eq!(pick, BezelPick::File("Wood.png".into()), "{scale:?}");
     }

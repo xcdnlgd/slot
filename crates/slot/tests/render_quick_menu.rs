@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use common::{clocked, tmp_root_with_carts};
 use slot::frontend::Frontend;
-use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
+use slot_gfx::{Compositor, HeadlessSurface, PANEL_H, PANEL_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
 use slot_ui::{quick_row_top, quick_row_top_at, quick_scroll, QuickRow, MOUTH_H, QUICK_VISIBLE};
@@ -27,7 +27,7 @@ fn tap(f: &mut Frontend, input: &mut Script, btn: Btn) {
 }
 
 fn at(px: &[u8], x: usize, y: usize) -> [u8; 3] {
-    let o = (y * OUT_W as usize + x) * 4;
+    let o = (y * PANEL_W as usize + x) * 4;
     [px[o], px[o + 1], px[o + 2]]
 }
 
@@ -55,7 +55,7 @@ fn lit_rows(px: &[u8], xs: std::ops::Range<usize>, top: usize) -> f32 {
 }
 
 fn pointer(px: &[u8], top: usize) -> Option<Pointer> {
-    let cols: Vec<usize> = (0..OUT_W as usize)
+    let cols: Vec<usize> = (0..PANEL_W as usize)
         .filter(|&x| (top..top + 52).any(|y| lit(px, x, y)))
         .collect();
     let split = cols.windows(2).position(|w| w[1] - w[0] >= 18)?;
@@ -91,7 +91,7 @@ fn composed(f: &mut Frontend, c: &mut Compositor, name: &str) -> Vec<u8> {
     if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
         let path = format!("{dir}/quick-menu-{name}.png");
         let file = std::fs::File::create(&path).expect("create png");
-        let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+        let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
         e.set_color(png::ColorType::Rgba);
         e.set_depth(png::BitDepth::Eight);
         e.write_header()
@@ -135,7 +135,7 @@ fn the_quick_menu_renders_full_screen() {
         let px = composed(&mut f, &mut c, name);
 
         assert_ne!(
-            at(&px, 2, OUT_H as usize - 2),
+            at(&px, 2, PANEL_H as usize - 2),
             flat,
             "{name}: the menu is on the flat ground, not the wallpaper"
         );
@@ -157,7 +157,7 @@ fn the_quick_menu_renders_full_screen() {
                     0
                 }
             };
-            let ink = inked(&px, from..OUT_W as usize, top);
+            let ink = inked(&px, from..PANEL_W as usize, top);
             spans.push((
                 row,
                 *ink.first().expect("a row with no label"),
@@ -177,7 +177,7 @@ fn the_quick_menu_renders_full_screen() {
             .expect("rows");
         let mid = (first + last) as f32 / 2.0;
         assert!(
-            (mid - OUT_W as f32 / 2.0).abs() <= 2.0,
+            (mid - PANEL_W as f32 / 2.0).abs() <= 2.0,
             "{name}: the column is centred on {mid}, by its widest row {row:?}"
         );
     }
@@ -211,7 +211,7 @@ fn the_quick_menu_renders_full_screen() {
     }
     tap(&mut f, &mut input, Btn::A);
     let px = composed(&mut f, &mut c, "clock");
-    let strip = (OUT_H as f32 - MOUTH_H) as usize..OUT_H as usize;
+    let strip = (PANEL_H as f32 - MOUTH_H) as usize..PANEL_H as usize;
     assert!(
         strip
             .flat_map(|y| (0..130).map(move |x| (x, y)))
@@ -244,7 +244,7 @@ fn every_fast_forward_speed_sits_on_the_rows_right_edge_and_clears_the_label() {
     let top = quick_row_top(QuickRow::FastForward, &f.app().hidden_rows()) as usize;
     for name in ["2x", "3x", "4x", "6x", "8x"] {
         let px = composed(&mut f, &mut c, name);
-        let value = inked(&px, 360..OUT_W as usize, top);
+        let value = inked(&px, 360..PANEL_W as usize, top);
         let last = *value
             .last()
             .unwrap_or_else(|| panic!("{name}: the Fast Forward row has no value"));
@@ -311,7 +311,7 @@ fn the_game_boy_page_shows_the_palette_by_name() {
         if row.opens() {
             continue;
         }
-        let value = inked(&px, 360..OUT_W as usize, top);
+        let value = inked(&px, 360..PANEL_W as usize, top);
         let last = *value.last().expect("a row with no value");
         assert!(
             (679..=688).contains(&last),
@@ -340,7 +340,7 @@ fn the_about_label_is_on_the_tinted_wallpaper() {
     let menu = composed(&mut f, &mut c, "about-row");
     tap(&mut f, &mut input, Btn::A);
     let about = composed(&mut f, &mut c, "about-label");
-    for (x, y) in [(4, 4), (OUT_W as usize - 4, 4), (4, OUT_H as usize - 4)] {
+    for (x, y) in [(4, 4), (PANEL_W as usize - 4, 4), (4, PANEL_H as usize - 4)] {
         assert_eq!(
             at(&about, x, y),
             at(&menu, x, y),
@@ -412,7 +412,7 @@ fn the_general_screen_page_renders() {
             (53..=57).contains(&first),
             "{row:?}'s label starts at x {first}"
         );
-        let value = inked(&px, 360..OUT_W as usize, top);
+        let value = inked(&px, 360..PANEL_W as usize, top);
         let last = *value.last().expect("a row with no value");
         assert!(
             (679..=688).contains(&last),
@@ -493,7 +493,7 @@ fn the_shortcuts_page_renders() {
     assert_eq!(f.app().quick_menu(), Some(QuickRow::ScSave));
     let px = composed(&mut f, &mut c, "shortcuts");
     let bar = quick_scroll(QuickRow::ScSave, &f.app().hidden_rows()).expect("the page scrolls");
-    let x = OUT_W as usize - 14;
+    let x = PANEL_W as usize - 14;
     let lum = |y: f32| {
         at(&px, x, y as usize)
             .iter()
@@ -535,7 +535,7 @@ fn the_left_stick_row_keeps_its_label_clear_of_its_value() {
     assert_eq!(f.app().quick_menu(), Some(QuickRow::LeftStick));
     let top = quick_row_top(QuickRow::LeftStick, &hidden) as usize;
     let px = composed(&mut f, &mut c, "left-stick");
-    let ink = inked(&px, 40..OUT_W as usize, top);
+    let ink = inked(&px, 40..PANEL_W as usize, top);
     assert!(!ink.is_empty(), "the Left Stick row drew nothing");
     let gap = ink.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
     assert!(
@@ -681,7 +681,7 @@ fn the_tools_page_renders_centred() {
         .filter(|r| !hidden.contains(r))
         .map(|row| {
             let top = quick_row_top(row, &hidden) as usize;
-            let ink = inked(&px, 170..OUT_W as usize - 40, top);
+            let ink = inked(&px, 170..PANEL_W as usize - 40, top);
             (
                 *ink.first().expect("a row with no label"),
                 *ink.last().unwrap(),
@@ -693,7 +693,7 @@ fn the_tools_page_renders_centred() {
     for (first, _) in &spans {
         assert!(first - left <= 3, "a label starts at x {first}, not {left}");
     }
-    let off = (left + right) as f32 / 2.0 - OUT_W as f32 / 2.0;
+    let off = (left + right) as f32 / 2.0 - PANEL_W as f32 / 2.0;
     assert!(off.abs() <= 4.0, "the column sits {off} px off centre");
 }
 
@@ -720,7 +720,7 @@ fn the_wifi_page_renders() {
     tap(&mut f, &mut input, Btn::Down);
     assert_eq!(f.app().quick_menu(), Some(QuickRow::Networks));
     let px = composed(&mut f, &mut c, "network-page");
-    let right = OUT_W as usize - 32;
+    let right = PANEL_W as usize - 32;
     for row in QuickRow::WIFI {
         let top = quick_row_top(row, &[]) as usize;
         let first = *inked(&px, 40..360, top)
@@ -791,7 +791,7 @@ fn about_shows_x_restart() {
     tap(&mut f, &mut input, Btn::A);
     let px = composed(&mut f, &mut c, "about-restart");
     let w = f.app().canvas().w as usize;
-    let footer = (OUT_H as f32 - MOUTH_H) as usize..OUT_H as usize;
+    let footer = (PANEL_H as f32 - MOUTH_H) as usize..PANEL_H as usize;
     let bright = |xs: std::ops::Range<usize>| {
         footer
             .clone()

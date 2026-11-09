@@ -1,5 +1,5 @@
 use slot::unwrap_scene::{body_width, box_face, cart_rect, rim_y, unwrap_art, UnwrapScene};
-use slot_gfx::{Canvas, OUT_H};
+use slot_gfx::{Canvas, PANEL_H};
 use slot_store::Platform;
 use slot_ui::{box_size, cart_box};
 
@@ -10,7 +10,7 @@ fn t(ms: u64) -> u64 {
 const PLATFORMS: [Platform; 2] = [Platform::Gba, Platform::Gb];
 
 fn canvases() -> [Canvas; 2] {
-    [Canvas::of((720, OUT_H)), Canvas::of((640, OUT_H))]
+    [Canvas::of((720, PANEL_H)), Canvas::of((640, PANEL_H))]
 }
 
 #[test]

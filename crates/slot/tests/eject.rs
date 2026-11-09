@@ -9,7 +9,7 @@ use slot::emu::Speed;
 use slot::persist::eject;
 use slot_input::Action;
 use slot_store::{read_slot_state, write_slot_state, Core, Platform, SlotState, StateRing};
-use slot_ui::{Draw, CART_W, OUT_H, OUT_W};
+use slot_ui::{Draw, CART_W, PANEL_H, PANEL_W};
 
 fn seated(cart: &str) -> SlotState {
     SlotState {
@@ -283,7 +283,7 @@ fn the_veil_never_falls_again_on_the_way_out() {
         out.iter()
             .find_map(|d| match *d {
                 Draw::Rect { w, h, colour, .. }
-                    if w >= OUT_W as f32 && h >= OUT_H as f32 && colour[..3] == [0.0; 3] =>
+                    if w >= PANEL_W as f32 && h >= PANEL_H as f32 && colour[..3] == [0.0; 3] =>
                 {
                     Some(colour[3])
                 }

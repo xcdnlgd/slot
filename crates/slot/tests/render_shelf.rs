@@ -5,7 +5,7 @@ mod common;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use slot::app::App;
-use slot_gfx::{Compositor, HeadlessSurface, TexId, OUT_H, OUT_W};
+use slot_gfx::{Compositor, HeadlessSurface, TexId, PANEL_H, PANEL_W};
 use slot_input::{Action, Btn};
 use slot_store::{write_slot_state, Appearance, Core, Platform, SlotState};
 use slot_ui::{
@@ -140,7 +140,7 @@ fn shot(app: &App, c: &mut Compositor, name: &str) -> Vec<u8> {
     if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
         let path = format!("{dir}/shelf-{name}.png");
         let file = std::fs::File::create(&path).expect("create png");
-        let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+        let mut e = png::Encoder::new(std::io::BufWriter::new(file), PANEL_W, PANEL_H);
         e.set_color(png::ColorType::Rgba);
         e.set_depth(png::BitDepth::Eight);
         e.write_header()
@@ -266,8 +266,8 @@ fn the_open_picker_footer_reads_in_light_mode() {
     shot(&app, &mut c, "gba-light-opening");
     let_it_hop(&mut app);
     let px = shot(&app, &mut c, "gba-light-open");
-    let y = OUT_H as usize - 20;
-    let row = &px[y * OUT_W as usize * 4..(y + 1) * OUT_W as usize * 4];
+    let y = PANEL_H as usize - 20;
+    let row = &px[y * PANEL_W as usize * 4..(y + 1) * PANEL_W as usize * 4];
     assert!(
         row.chunks(4).any(|p| p[0] < 90),
         "the light footer shows no dark ink"
@@ -336,13 +336,13 @@ fn cartridge_rows(px: &[u8]) -> Option<(usize, usize)> {
             .iter()
             .any(|f| (0..3).all(|k| px[o + k].abs_diff((f[k] * 255.0).round() as u8) <= 8))
     };
-    let mut rows = (0..OUT_H as usize)
-        .filter(|y| (0..OUT_W as usize).any(|x| cart((y * OUT_W as usize + x) * 4)));
+    let mut rows = (0..PANEL_H as usize)
+        .filter(|y| (0..PANEL_W as usize).any(|x| cart((y * PANEL_W as usize + x) * 4)));
     let first = rows.next()?;
     Some((first, rows.next_back().unwrap_or(first)))
 }
 
 fn centre(px: &[u8], row: usize) -> [u8; 3] {
-    let o = (row * OUT_W as usize + (OUT_W / 2) as usize) * 4;
+    let o = (row * PANEL_W as usize + (PANEL_W / 2) as usize) * 4;
     [px[o], px[o + 1], px[o + 2]]
 }

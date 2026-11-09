@@ -1,13 +1,33 @@
 #![cfg(target_os = "macos")]
 
 use slot_gfx::{
-    blue_light_gain, canvas_size, contrast_boost, dim_gain, game_layout, lcd3x_factors, lcd3x_mask,
-    saturation_boost, Compositor, Draw, GameLayout, HeadlessSurface, ScreenEffect, Sizing, OUT_H,
+    blue_light_gain, canvas_size, contrast_boost, dim_gain, game_size, lcd3x_factors, lcd3x_mask,
+    saturation_boost, Compositor, Draw, GameSize, HeadlessSurface, ScreenEffect, Sizing, OUT_H,
     OUT_W, SRC_H, SRC_W,
 };
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 static GL: Mutex<()> = Mutex::new(());
+
+#[derive(Clone, Copy)]
+struct Place {
+    size: GameSize,
+    offset: (i32, i32),
+}
+
+fn place(panel: (u32, u32), picture: (u32, u32), sizing: Sizing) -> Place {
+    let size = game_size(panel, picture, sizing);
+    let offset = (
+        ((panel.0 - size.w) / 2) as i32,
+        ((panel.1 - size.h) / 2) as i32,
+    );
+    Place { size, offset }
+}
+
+fn adopt(c: &mut Compositor, place: Place) {
+    c.set_game_size(place.size);
+    c.set_game_offset(place.offset);
+}
 
 fn compositor() -> Option<(MutexGuard<'static, ()>, HeadlessSurface, Compositor)> {
     let guard = GL.lock().unwrap_or_else(PoisonError::into_inner);
@@ -259,21 +279,29 @@ fn a_still_is_drawn_like_the_live_picture() {
     c.set_screen_effect(ScreenEffect::None);
     c.set_screen_power(1.0);
     for (window, layout, rect) in [
-        ((720, 480), GameLayout::BAND, WHOLE),
-        ((720, 480), GameLayout::BAND, GB_RECT),
         (
-            (640, 480),
-            game_layout((640, 480), (160, 144), Sizing::Integer),
+            (720, 480),
+            place((720, 480), (160, 144), Sizing::Panel),
+            WHOLE,
+        ),
+        (
+            (720, 480),
+            place((720, 480), (160, 144), Sizing::Panel),
             GB_RECT,
         ),
         (
             (640, 480),
-            game_layout((640, 480), (160, 144), Sizing::Panel),
+            place((640, 480), (160, 144), Sizing::Integer),
+            GB_RECT,
+        ),
+        (
+            (640, 480),
+            place((640, 480), (160, 144), Sizing::Panel),
             GB_RECT,
         ),
     ] {
         c.fit(window);
-        c.set_game_layout(layout);
+        adopt(&mut c, layout);
         c.set_game_source_rect(rect);
         c.begin_frame();
         c.upload_game(&game);
@@ -833,7 +861,7 @@ fn shimmerless_never_blends_the_margin_into_the_picture() {
     };
     let inside = [0x40, 0x80, 0xc0];
     let margin = [255, 0, 255];
-    c.set_game_layout(game_layout((640, 480), (160, 144), Sizing::Fit));
+    adopt(&mut c, place((640, 480), (160, 144), Sizing::Fit));
     c.fit((640, 480));
     c.set_picture([
         GB_RECT[0],
@@ -1016,12 +1044,11 @@ fn at(frame: &[u8], w: u32, x: usize, y: usize) -> [u8; 3] {
     [frame[o], frame[o + 1], frame[o + 2]]
 }
 
-fn laid_out(c: &mut Compositor, window: (u32, u32), layout: GameLayout, power: f32) -> Vec<u8> {
+fn laid_out(c: &mut Compositor, window: (u32, u32), layout: Place, power: f32) -> Vec<u8> {
     c.fit(window);
     c.set_game_source_rect(GB_RECT);
     c.set_screen_effect(ScreenEffect::None);
-    c.set_sp_frame(true);
-    c.set_game_layout(layout);
+    adopt(&mut c, layout);
     c.set_screen_power(power);
     c.begin_frame();
     c.upload_game(&gb_shaped(coded, [255, 0, 255]));
@@ -1045,7 +1072,7 @@ fn a_panel_layout_owns_the_whole_4_by_3_panel() {
     let Some((_g, _s, mut c)) = compositor() else {
         return;
     };
-    let layout = game_layout((640, 480), (160, 144), Sizing::Integer);
+    let layout = place((640, 480), (160, 144), Sizing::Integer);
     let frame = laid_out(&mut c, (640, 480), layout, 1.0);
     assert_eq!(c.frame_size(), (640, 480));
     assert_eq!(at(&frame, 640, 80, 24), [1, 1, 200]);
@@ -1058,7 +1085,7 @@ fn a_layout_rect_holds_through_menus() {
     let Some((_g, _s, mut c)) = compositor() else {
         return;
     };
-    let layout = game_layout((640, 480), (160, 144), Sizing::Integer);
+    let layout = place((640, 480), (160, 144), Sizing::Integer);
     let frame = laid_out(&mut c, (640, 480), layout, 1.0);
     c.begin_frame();
     c.draw_list(&[
@@ -1079,9 +1106,9 @@ fn power_shrinks_the_picture_inside_its_layout_rect() {
     let Some((_g, _s, mut c)) = compositor() else {
         return;
     };
-    let layout = game_layout((640, 480), (160, 144), Sizing::Integer);
+    let layout = place((640, 480), (160, 144), Sizing::Integer);
     c.fit((640, 480));
-    c.set_game_layout(layout);
+    adopt(&mut c, layout);
     c.begin_frame();
     c.draw_list(&[]);
     let empty = c.read_frame();
@@ -1105,34 +1132,6 @@ fn power_shrinks_the_picture_inside_its_layout_rect() {
 }
 
 #[test]
-fn the_band_layout_draws_exactly_as_before() {
-    for window in [(720, 480), (640, 480)] {
-        let before = {
-            let Some((_g, _s, mut c)) = compositor() else {
-                return;
-            };
-            c.fit(window);
-            c.set_game_source_rect(GB_RECT);
-            c.set_screen_effect(ScreenEffect::None);
-            c.set_sp_frame(true);
-            c.set_screen_power(1.0);
-            c.begin_frame();
-            c.upload_game(&gb_shaped(coded, [255, 0, 255]));
-            c.draw_list(&[Draw::Game]);
-            c.read_frame()
-        };
-        let Some((_g, _s, mut c)) = compositor() else {
-            return;
-        };
-        assert_eq!(
-            laid_out(&mut c, window, GameLayout::BAND, 1.0),
-            before,
-            "{window:?}"
-        );
-    }
-}
-
-#[test]
 fn fit_draws_the_whole_game_boy_picture_and_stays_put() {
     let Some((_g, _s, mut c)) = compositor() else {
         return;
@@ -1141,7 +1140,7 @@ fn fit_draws_the_whole_game_boy_picture_and_stays_put() {
         ((720, 480), (93, 0, 533, 480)),
         ((640, 480), (53, 0, 533, 480)),
     ] {
-        let layout = game_layout(panel, (160, 144), Sizing::Fit);
+        let layout = place(panel, (160, 144), Sizing::Fit);
         let frame = laid_out(&mut c, panel, layout, 1.0);
         assert_eq!(c.frame_size(), panel);
         assert_eq!(at(&frame, panel.0, x, y), [1, 1, 200], "{panel:?}");
@@ -1163,7 +1162,7 @@ fn fractional_fit_grid_lines_every_original_game_boy_pixel_evenly() {
         return;
     };
     for (panel, left) in [((640, 480), 53), ((720, 480), 93)] {
-        c.set_game_layout(game_layout(panel, (160, 144), Sizing::Fit));
+        adopt(&mut c, place(panel, (160, 144), Sizing::Fit));
         c.fit(panel);
         c.set_game_source_rect(GB_RECT);
         c.set_screen_effect(ScreenEffect::Grid);
@@ -1198,7 +1197,7 @@ fn a_still_over_a_panel_layout_leaves_no_live_game_around_it() {
         return;
     };
     for sizing in [Sizing::Fit, Sizing::Integer, Sizing::Panel] {
-        let layout = game_layout((640, 480), (160, 144), sizing);
+        let layout = place((640, 480), (160, 144), sizing);
         laid_out(&mut c, (640, 480), layout, 1.0);
         let still = c.create_texture_nearest(SRC_W, SRC_H, &flat_shot([10, 20, 30]));
         c.begin_frame();

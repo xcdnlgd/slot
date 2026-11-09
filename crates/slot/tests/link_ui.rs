@@ -20,7 +20,9 @@ use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
 use slot_retro::{ButtonMask, LinkChannel};
 use slot_store::{write_slot_state, Core, Platform, SlotState};
-use slot_ui::{arrows_hint_face, hint_face, Draw, TexId, Toast, HINT_EDGE, MOUTH_H, OUT_H, OUT_W};
+use slot_ui::{
+    arrows_hint_face, hint_face, Draw, TexId, Toast, HINT_EDGE, MOUTH_H, PANEL_H, PANEL_W,
+};
 use tempfile::TempDir;
 
 const BAIL: Duration = Duration::from_secs(5);
@@ -488,14 +490,14 @@ fn the_link_screen_draws_its_role_over_the_game() {
         .iter()
         .position(|d| {
             matches!(*d, Draw::Tex { tex, w, h, .. }
-                if tex == shot && w == OUT_W as f32 && h == OUT_H as f32)
+                if tex == shot && w == PANEL_W as f32 && h == PANEL_H as f32)
         })
         .expect("the screen drew no screenshot of the game");
     let scrim = out
         .iter()
         .position(|d| {
             matches!(*d, Draw::Rect { w, h, colour, .. }
-        if w == OUT_W as f32 && h == OUT_H as f32 && colour == LINK_SCRIM)
+        if w == PANEL_W as f32 && h == PANEL_H as f32 && colour == LINK_SCRIM)
         })
         .expect("the screen drew no scrim over the game");
     let host = out
@@ -1251,7 +1253,7 @@ fn pick_names_cancel_and_mode_across_the_strip() {
         [LinkLegend::Cancel, LinkLegend::Mode],
     );
     assert!(
-        keys.iter().all(|k| k.1 == OUT_H as f32 - MOUTH_H),
+        keys.iter().all(|k| k.1 == PANEL_H as f32 - MOUTH_H),
         "the keys do not fill the carousel footer"
     );
     let left = keys[0].0;
@@ -1262,7 +1264,7 @@ fn pick_names_cancel_and_mode_across_the_strip() {
         "Cancel is not on the left of the strip: {left}"
     );
     assert!(
-        (right - OUT_W as f32).abs() < 1.0,
+        (right - PANEL_W as f32).abs() < 1.0,
         "Mode is not on the right of the strip: {right}"
     );
     let cancel_end = keys[0].0 + keys[0].2 - HINT_EDGE as f32;

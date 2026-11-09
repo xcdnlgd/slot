@@ -1,12 +1,14 @@
-use slot_gfx::{OUT_H, OUT_W};
-
 use crate::art::render_svg;
 use crate::bitmaps;
 use crate::cart::CartFace;
 
 pub const PORT_W: u32 = bitmaps::PORT_W;
 pub const PORT_H: u32 = bitmaps::PORT_H;
-pub const PORT_Y: f32 = (OUT_H - PORT_H) as f32;
+/// The link artwork is designed on a 720x480 sheet. Panels crop this sheet
+/// around its centre; these are asset coordinates, not layout coordinates.
+pub const LINK_ART_W: f32 = 720.0;
+pub const LINK_ART_H: f32 = 480.0;
+pub const PORT_Y: f32 = LINK_ART_H - PORT_H as f32;
 pub const PLUG_W: u32 = 92;
 pub const PLUG_H: u32 = 244;
 pub const PLUG_TIP_X: f32 = 46.0;
@@ -16,7 +18,7 @@ pub const ADAPTER_H: u32 = bitmaps::ADAPTER_H;
 pub const ADAPTER_BASE_X: f32 = 145.0;
 /// Top of the connector. The connector is the bottom 31px, so a seated base puts the tip at `PORT_Y + 31`, the same depth as a plug.
 pub const ADAPTER_BASE_Y: f32 = 149.0;
-const CX: f32 = OUT_W as f32 / 2.0;
+const CX: f32 = LINK_ART_W / 2.0;
 pub const ARCS: [(f32, f32, u32, u32); 3] = [
     (CX + 148.0, 324.0, 16, 56),
     (CX + 170.0, 308.0, 20, 88),
