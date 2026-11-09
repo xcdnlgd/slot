@@ -123,6 +123,53 @@ Window      host window (host only)
 - Do not make the upstream URL configurable by silently falling back to it.
   A fork release channel needs its own explicit URL and version scheme.
 
+## Upstream ports
+
+Do not merge upstream wholesale just because it is available. Review each
+upstream commit and port only what fits this fork.
+
+Use a temporary detached worktree for upstream and a port branch in the fork:
+
+```sh
+git worktree add --detach ../slot-upstream upstream/main
+git switch -c port/upstream-vX.Y
+```
+
+For every upstream commit:
+
+1. Read `git show --stat <sha>` and `git show <sha>`.
+2. Classify it:
+   - port directly
+   - port with adaptation
+   - defer
+   - skip
+3. Reject changes that depend on assumptions this fork removed:
+   - fixed `720x480` logical layout
+   - `GameLayout`, band or SpFrame
+   - `video_mode`
+   - DS+ dual-screen or DSperate paths
+   - KMS layouts or panels this fork does not support
+4. Prefer `git cherry-pick -x <sha>` when it applies cleanly.
+5. Otherwise port manually and say `Ported from upstream <sha>` in the
+   commit message.
+6. Add the matching upstream tests when possible.
+
+Keep a temporary port ledger outside the repository. Do not commit temporary
+state or machine-specific paths.
+
+After each batch:
+
+```sh
+cargo check --workspace --all-targets
+cargo nextest run -p slot --test <relevant-test>
+go-task test
+go-task lint
+go-task lint:device
+```
+
+Merge the port branch back only after the full suite and device checks pass.
+Do not rebase or force-push the fork branch.
+
 ## Shaders and bezels
 
 - External shaders are scanned from `Shaders/Common`, `Shaders/GBA`,
