@@ -2130,12 +2130,12 @@ fn the_colour_shortcut_flips_only_the_system_that_is_playing() {
 
 #[test]
 fn a_game_boy_color_game_keeps_its_own_colour_and_shader() {
-    use slot_store::Shader;
     let d = common::tmp_root_with_gbc_carts(&["Crystal", "Oracle"]);
     let (mut s, _motor) = common::session_with_platform(d.path());
     s.app_mut().apply(slot_input::Action::Insert);
     s.app_mut()
         .apply(slot_input::Action::ColourCorrectionToggle);
+    s.app_mut().apply(slot_input::Action::ShaderNext);
     s.app_mut().apply(slot_input::Action::ShaderNext);
     let saved = slot_store::read_slot_state(d.path());
     assert_eq!(
@@ -2148,11 +2148,15 @@ fn a_game_boy_color_game_keeps_its_own_colour_and_shader() {
         "a Game Boy Color game's colour shortcut did not land on GBC alone"
     );
     assert_eq!(
-        (saved.shader_gb, saved.shader_gbc),
-        (Shader::Simpletex, Shader::Shimmerless),
+        (
+            saved.shader_gba.as_deref(),
+            saved.shader_gb.as_deref(),
+            saved.shader_gbc.as_deref()
+        ),
+        (Some("Grid"), Some("Simpletex"), Some("Dot")),
         "a Game Boy Color game's shader shortcut did not land on GBC alone"
     );
-    assert_eq!(s.app().screen_shader(), Shader::Shimmerless);
+    assert_eq!(s.app().screen_shader().as_deref(), Some("Dot"));
 }
 
 #[test]
@@ -2276,55 +2280,54 @@ fn the_shader_shortcut_steps_the_seated_carts_shader_both_ways_and_names_it() {
     let (mut s, _motor) = common::session_with_platform(d.path());
     s.app_mut().set_panel((640, 480));
     s.app_mut().apply(slot_input::Action::Insert);
-    use slot_store::Shader;
     for (action, want, said) in [
         (
             slot_input::Action::ShaderNext,
-            Shader::Dot,
-            slot_ui::Toast::ShaderDot,
+            Some("LCD3x"),
+            slot_ui::Toast::Shader,
         ),
         (
             slot_input::Action::ShaderNext,
-            Shader::Shimmerless,
-            slot_ui::Toast::ShaderShimmerless,
+            Some("Simpletex"),
+            slot_ui::Toast::Shader,
         ),
         (
             slot_input::Action::ShaderNext,
-            Shader::Off,
+            None,
             slot_ui::Toast::ShaderOff,
         ),
         (
             slot_input::Action::ShaderPrev,
-            Shader::Shimmerless,
-            slot_ui::Toast::ShaderShimmerless,
+            Some("Simpletex"),
+            slot_ui::Toast::Shader,
         ),
         (
             slot_input::Action::ShaderPrev,
-            Shader::Dot,
-            slot_ui::Toast::ShaderDot,
+            Some("LCD3x"),
+            slot_ui::Toast::Shader,
         ),
         (
             slot_input::Action::ShaderPrev,
-            Shader::Grid,
-            slot_ui::Toast::ShaderGrid,
+            Some("Grid"),
+            slot_ui::Toast::Shader,
         ),
         (
             slot_input::Action::ShaderPrev,
-            Shader::Lcd3x,
-            slot_ui::Toast::ShaderLcd3x,
+            Some("Dot"),
+            slot_ui::Toast::Shader,
         ),
     ] {
         s.app_mut().apply(action);
         assert_eq!(
-            slot_store::read_slot_state(d.path()).shader_gba,
+            slot_store::read_slot_state(d.path()).shader_gba.as_deref(),
             want,
             "{action:?}"
         );
         assert_eq!(s.app().toast(), Some(said), "{action:?}");
     }
     assert_eq!(
-        slot_store::read_slot_state(d.path()).shader_gb,
-        Shader::Simpletex,
+        slot_store::read_slot_state(d.path()).shader_gb.as_deref(),
+        Some("Simpletex"),
         "a GBA cart moved the Game Boy shader"
     );
 }

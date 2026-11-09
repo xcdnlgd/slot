@@ -3,7 +3,7 @@ mod common;
 use common::{app_playing_in, tmp_root_with_carts};
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
-use slot_store::{Blending, Core, Platform, Shader, StateRing};
+use slot_store::{Blending, Core, Platform, StateRing};
 use slot_ui::{
     Draw, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MOUTH_H, PANEL_H, PANEL_W,
 };
@@ -131,7 +131,7 @@ fn shader_edits_the_running_platforms_shader() {
     go_to(&mut a, QuickRow::Shader);
     press(&mut a, Btn::Right);
     assert_ne!(a.screen_shader(), before);
-    assert_ne!(a.screen_shader(), Shader::Off);
+    assert!(a.screen_shader().is_some());
     assert_eq!(
         a.quick_value(QuickRow::Shader),
         a.quick_value(QuickRow::GbaShader)

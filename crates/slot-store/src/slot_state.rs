@@ -355,12 +355,11 @@ pub struct SlotState {
     pub colour_correction_gba: bool,
     pub colour_correction_gb: bool,
     pub colour_correction_gbc: bool,
-    pub shader_gba: Shader,
-    pub shader_gb: Shader,
-    pub shader_gbc: Shader,
-    pub shader_external_gba: Option<String>,
-    pub shader_external_gb: Option<String>,
-    pub shader_external_gbc: Option<String>,
+    /// Shader file stems. `None` is Off; every other value names a shader
+    /// preset or source in Shaders/Common or the platform folder.
+    pub shader_gba: Option<String>,
+    pub shader_gb: Option<String>,
+    pub shader_gbc: Option<String>,
     pub auto_load: bool,
     pub eject_save: bool,
     pub turbo: bool,
@@ -449,69 +448,36 @@ impl SlotState {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Shader {
-    Off,
-    Lcd3x,
-    Grid,
-    Dot,
-    Simpletex,
-    Shimmerless,
-    External,
+fn shader_text(name: Option<&str>) -> &str {
+    name.unwrap_or("off")
 }
 
-impl Shader {
-    pub const GBA: [Shader; 5] = [
-        Shader::Off,
-        Shader::Lcd3x,
-        Shader::Grid,
-        Shader::Dot,
-        Shader::Shimmerless,
-    ];
-    pub const GBA_3_2: [Shader; 4] = [Shader::Off, Shader::Lcd3x, Shader::Grid, Shader::Dot];
-    pub const GB: [Shader; 5] = [
-        Shader::Off,
-        Shader::Lcd3x,
-        Shader::Grid,
-        Shader::Simpletex,
-        Shader::Shimmerless,
-    ];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Shader::Off => "off",
-            Shader::Lcd3x => "lcd3x",
-            Shader::Grid => "grid",
-            Shader::Dot => "dot",
-            Shader::Simpletex => "simpletex",
-            Shader::Shimmerless => "shimmerless",
-            Shader::External => "external",
+/// Read a stored shader value into a file stem. Old builds stored an enum and
+/// kept external presets in a second key, so both shapes have to be understood.
+fn migrate_shader(value: &str, external: Option<&str>) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    if lower == "external" {
+        return external.and_then(shader_stem);
+    }
+    let known = match lower.as_str() {
+        "" | "off" => return None,
+        "lcd3x" => "LCD3x",
+        "grid" => "Grid",
+        "dot" => "Dot",
+        "simpletex" => "Simpletex",
+        // The old built-in shimmerless is gone. Point it at the card's
+        // closest shader; it falls back to Off when that file is absent.
+        "shimmerless" => "sharp-shimmerless",
+        _ => {
+            return crate::shaders::valid_shader_stem(value).then(|| value.to_string());
         }
-    }
+    };
+    Some(known.to_string())
+}
 
-    pub fn parse(name: &str) -> Option<Shader> {
-        [
-            Shader::Off,
-            Shader::Lcd3x,
-            Shader::Grid,
-            Shader::Dot,
-            Shader::Simpletex,
-            Shader::Shimmerless,
-            Shader::External,
-        ]
-        .into_iter()
-        .find(|s| s.name() == name)
-    }
-
-    pub fn step(self, choices: &[Shader], right: bool) -> Shader {
-        let n = choices.len();
-        let at = choices.iter().position(|&s| s == self).unwrap_or(0);
-        choices[if right {
-            (at + 1) % n
-        } else {
-            (at + n - 1) % n
-        }]
-    }
+fn shader_stem(key: &str) -> Option<String> {
+    let stem = Path::new(key).file_stem()?.to_str()?;
+    crate::shaders::valid_shader_stem(stem).then(|| stem.to_string())
 }
 
 impl Default for SlotState {
@@ -538,12 +504,9 @@ impl Default for SlotState {
             colour_correction_gba: false,
             colour_correction_gb: false,
             colour_correction_gbc: false,
-            shader_gba: Shader::Grid,
-            shader_gb: Shader::Simpletex,
-            shader_gbc: Shader::Simpletex,
-            shader_external_gba: None,
-            shader_external_gb: None,
-            shader_external_gbc: None,
+            shader_gba: Some("Grid".into()),
+            shader_gb: Some("Simpletex".into()),
+            shader_gbc: Some("Simpletex".into()),
             auto_load: true,
             eject_save: true,
             turbo: true,
@@ -644,8 +607,8 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.ff_sound as u8,
         s.colour_correction_gba as u8,
         s.colour_correction_gb as u8,
-        s.shader_gba.name(),
-        s.shader_gb.name(),
+        shader_text(s.shader_gba.as_deref()),
+        shader_text(s.shader_gb.as_deref()),
         s.eject_save as u8,
         s.turbo as u8,
         s.rewind as u8,
@@ -658,12 +621,9 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         "colour_correction_gbc={}\n",
         s.colour_correction_gbc as u8
     ));
-    text.push_str(&format!("shader_gbc={}\n", s.shader_gbc.name()));
     text.push_str(&format!(
-        "shader_external_gba={}\nshader_external_gb={}\nshader_external_gbc={}\n",
-        s.shader_external_gba.as_deref().unwrap_or(""),
-        s.shader_external_gb.as_deref().unwrap_or(""),
-        s.shader_external_gbc.as_deref().unwrap_or("")
+        "shader_gbc={}\n",
+        shader_text(s.shader_gbc.as_deref())
     ));
     text.push_str(&format!("dim={}\n", s.dim));
     text.push_str(&format!("saturation={}\n", s.saturation));
@@ -794,10 +754,7 @@ fn parse(text: &str) -> Option<SlotState> {
             "colour_correction_gba" => colour_correction_gba = flag(value),
             "colour_correction_gb" => colour_correction_gb = flag(value),
             "colour_correction_gbc" => colour_correction_gbc = flag(value),
-            "shader_gba" => {
-                shader_gba = Shader::parse(value)
-                    .filter(|s| *s == Shader::External || Shader::GBA.contains(s))
-            }
+            "shader_gba" => shader_gba = Some(value.to_string()),
             "shader_external_gba" => {
                 shader_external_gba = Some(value.to_string()).filter(|v| !v.is_empty())
             }
@@ -835,19 +792,25 @@ fn parse(text: &str) -> Option<SlotState> {
             "shelf_cart" => shelf_cart = recent_value(value),
             "shelf_mode" => shelf_mode = ShelfMode::parse(value),
             "collection" => collection = Some(value.to_string()).filter(|v| !v.is_empty()),
-            "shader_gb" => {
-                shader_gb = Shader::parse(value)
-                    .filter(|s| *s == Shader::External || Shader::GB.contains(s))
-            }
-            "shader_gbc" => {
-                shader_gbc = Shader::parse(value)
-                    .filter(|s| *s == Shader::External || Shader::GB.contains(s))
-            }
+            "shader_gb" => shader_gb = Some(value.to_string()),
+            "shader_gbc" => shader_gbc = Some(value.to_string()),
             _ => {}
         }
     }
     let cart = cart?;
     let fallback = SlotState::default();
+    let shader_gba = match shader_gba.as_deref() {
+        Some(value) => migrate_shader(value, shader_external_gba.as_deref()),
+        None => fallback.shader_gba.clone(),
+    };
+    let shader_gb = match shader_gb.as_deref() {
+        Some(value) => migrate_shader(value, shader_external_gb.as_deref()),
+        None => fallback.shader_gb.clone(),
+    };
+    let shader_gbc = match shader_gbc.as_deref() {
+        Some(value) => migrate_shader(value, shader_external_gbc.as_deref()),
+        None => shader_gb.clone().or_else(|| fallback.shader_gbc.clone()),
+    };
     Some(SlotState {
         cart: (!cart.is_empty()).then_some(cart),
         cart_platform,
@@ -877,12 +840,9 @@ fn parse(text: &str) -> Option<SlotState> {
             .or(colour_correction_gb)
             .or(colour_correction)
             .unwrap_or(fallback.colour_correction_gbc),
-        shader_gba: shader_gba.unwrap_or(fallback.shader_gba),
-        shader_gb: shader_gb.unwrap_or(fallback.shader_gb),
-        shader_gbc: shader_gbc.or(shader_gb).unwrap_or(fallback.shader_gbc),
-        shader_external_gba,
-        shader_external_gb,
-        shader_external_gbc,
+        shader_gba,
+        shader_gb,
+        shader_gbc,
         auto_load: auto_load.unwrap_or(fallback.auto_load),
         eject_save: eject_save.unwrap_or(fallback.eject_save),
         turbo: turbo.unwrap_or(fallback.turbo),

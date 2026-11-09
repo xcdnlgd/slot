@@ -8,7 +8,7 @@ use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
 use slot_store::{
     read_slot_state, write_slot_state, Appearance, BezelPick, Blending, GbColors, GbPalette,
-    Platform, Scale, Shader, SlotState, WallpaperPick, Zone,
+    Platform, Scale, SlotState, WallpaperPick, Zone,
 };
 use slot_ui::{
     Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MENU_PAD, MOUTH_H, PANEL_H,
@@ -467,50 +467,55 @@ fn each_platform_keeps_its_own_shader_wraps_and_starts_on_grid_and_simpletex() {
     let (d, mut a, _) = on_carousel();
     a.set_panel((640, 480));
     open_at(&mut a, QuickRow::GbaShader);
-    assert_eq!(a.quick_value(QuickRow::GbaShader), Some(QuickValue::Grid));
-    assert_eq!(
-        a.quick_value(QuickRow::GbShader),
-        Some(QuickValue::Simpletex)
-    );
+    assert_eq!(a.quick_value(QuickRow::GbaShader), Some(QuickValue::Named));
+    assert_eq!(a.quick_value(QuickRow::GbShader), Some(QuickValue::Named));
     for (btn, want, shown) in [
-        (Btn::Right, Shader::Dot, QuickValue::Dot),
-        (Btn::Right, Shader::Shimmerless, QuickValue::Shimmerless),
-        (Btn::Right, Shader::Off, QuickValue::Off),
-        (Btn::Left, Shader::Shimmerless, QuickValue::Shimmerless),
-        (Btn::Left, Shader::Dot, QuickValue::Dot),
-        (Btn::Left, Shader::Grid, QuickValue::Grid),
-        (Btn::Left, Shader::Lcd3x, QuickValue::Lcd3x),
-        (Btn::Left, Shader::Off, QuickValue::Off),
+        (Btn::Right, Some("LCD3x"), QuickValue::Named),
+        (Btn::Right, Some("Simpletex"), QuickValue::Named),
+        (Btn::Right, None, QuickValue::Off),
+        (Btn::Left, Some("Simpletex"), QuickValue::Named),
+        (Btn::Left, Some("LCD3x"), QuickValue::Named),
+        (Btn::Left, Some("Grid"), QuickValue::Named),
+        (Btn::Left, Some("Dot"), QuickValue::Named),
+        (Btn::Left, None, QuickValue::Off),
     ] {
         press(&mut a, btn);
         assert_eq!(a.quick_value(QuickRow::GbaShader), Some(shown), "{btn:?}");
         assert_eq!(
-            read_slot_state(d.path()).shader_gba,
+            read_slot_state(d.path()).shader_gba.as_deref(),
             want,
             "{btn:?} never reached the card"
         );
     }
-    assert_eq!(read_slot_state(d.path()).shader_gb, Shader::Simpletex);
+    assert_eq!(
+        read_slot_state(d.path()).shader_gb.as_deref(),
+        Some("Simpletex")
+    );
     while a.quick_menu().is_some() {
         press(&mut a, Btn::B);
     }
     open_at(&mut a, QuickRow::GbShader);
     press(&mut a, Btn::Left);
-    assert_eq!(read_slot_state(d.path()).shader_gb, Shader::Grid);
-    assert_eq!(read_slot_state(d.path()).shader_gba, Shader::Off);
     assert_eq!(
-        a.quick_value(QuickRow::GbcShader),
-        Some(QuickValue::Simpletex)
+        read_slot_state(d.path()).shader_gb.as_deref(),
+        Some("LCD3x")
     );
+    assert_eq!(read_slot_state(d.path()).shader_gba, None);
+    assert_eq!(a.quick_value(QuickRow::GbcShader), Some(QuickValue::Named));
     while a.quick_menu().is_some() {
         press(&mut a, Btn::B);
     }
     open_at(&mut a, QuickRow::GbcShader);
     press(&mut a, Btn::Right);
+    press(&mut a, Btn::Right);
     let s = read_slot_state(d.path());
     assert_eq!(
-        (s.shader_gba, s.shader_gb, s.shader_gbc),
-        (Shader::Off, Shader::Grid, Shader::Shimmerless)
+        (
+            s.shader_gba.as_deref(),
+            s.shader_gb.as_deref(),
+            s.shader_gbc.as_deref()
+        ),
+        (None, Some("LCD3x"), Some("Dot"))
     );
 }
 
@@ -1670,50 +1675,13 @@ fn fit_is_offered_on_both_panels() {
 }
 
 #[test]
-fn gba_skips_shimmerless_on_a_three_by_two_panel_and_keeps_it_on_four_by_three() {
-    let (d, mut a, _) = on_carousel();
-    a.set_panel((720, 480));
-    open_at(&mut a, QuickRow::GbaShader);
-    press(&mut a, Btn::Right);
-    assert_eq!(a.quick_value(QuickRow::GbaShader), Some(QuickValue::Dot));
-    press(&mut a, Btn::Right);
-    assert_eq!(a.quick_value(QuickRow::GbaShader), Some(QuickValue::Off));
-    assert_eq!(read_slot_state(d.path()).shader_gba, Shader::Off);
-    press(&mut a, Btn::Left);
-    assert_eq!(read_slot_state(d.path()).shader_gba, Shader::Dot);
-
-    a.set_panel((640, 480));
-    press(&mut a, Btn::Right);
-    assert_eq!(
-        a.quick_value(QuickRow::GbaShader),
-        Some(QuickValue::Shimmerless)
-    );
-}
-
-#[test]
-fn game_boy_keeps_shimmerless_on_a_three_by_two_panel() {
-    let (_d, mut a, _) = on_carousel();
-    a.set_panel((720, 480));
-    open_at(&mut a, QuickRow::GbShader);
-    press(&mut a, Btn::Right);
-    assert_eq!(
-        a.quick_value(QuickRow::GbShader),
-        Some(QuickValue::Shimmerless)
-    );
-}
-
-#[test]
-fn a_saved_gba_shimmerless_reads_as_off_on_three_by_two_and_survives_on_the_card() {
-    let (d, mut a, _) = on_carousel_with(SlotState {
-        shader_gba: Shader::Shimmerless,
+fn a_shader_saved_for_gba_survives_on_a_three_by_two_panel() {
+    let (_d, mut a, _) = on_carousel_with(SlotState {
+        shader_gba: Some("Simpletex".into()),
         ..SlotState::default()
     });
     a.set_panel((720, 480));
-    assert_eq!(a.quick_value(QuickRow::GbaShader), Some(QuickValue::Off));
-    assert_eq!(read_slot_state(d.path()).shader_gba, Shader::Shimmerless);
+    assert_eq!(a.quick_value(QuickRow::GbaShader), Some(QuickValue::Named));
     a.set_panel((640, 480));
-    assert_eq!(
-        a.quick_value(QuickRow::GbaShader),
-        Some(QuickValue::Shimmerless)
-    );
+    assert_eq!(a.quick_value(QuickRow::GbaShader), Some(QuickValue::Named));
 }

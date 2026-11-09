@@ -30,7 +30,7 @@ mod surface;
 
 pub use bezel::{framed, hole};
 pub use draw::{paper_bounds, paper_flap_shows, Draw, TexId};
-pub use external::{load_shader, ShaderSource};
+pub use external::{load_shader, ShaderFrame, ShaderSource};
 pub use fbdev::{egl_error, panel_mode, panel_size, FbdevSurface};
 pub use fbo::{canvas_size, Compositor, BACKDROP};
 pub use grade::{
@@ -41,7 +41,7 @@ pub use headless::HeadlessSurface;
 #[cfg(feature = "host")]
 pub use host::HostSurface;
 pub use layout::Canvas;
-pub use lcd3x::{lcd3x_factors, lcd3x_mask, ScreenEffect};
+pub use lcd3x::{lcd3x_factors, lcd3x_mask};
 pub use pipeline::{SRC_H, SRC_W, WHOLE_TEXTURE};
 pub use placement::{game_size, GameSize, Sizing};
 pub use power::{screen_brightness, screen_rect_above, screen_scale, screen_width, DEFAULT_HEIGHT};

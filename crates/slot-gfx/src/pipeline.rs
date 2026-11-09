@@ -1,7 +1,7 @@
-use crate::lcd3x::ScreenEffect;
+use crate::external::ShaderFrame;
 use crate::power::{screen_brightness, screen_rect_above};
 use crate::quad::Quad;
-use crate::shaders::{GAME_FRAG, RECT_VERT};
+use crate::shaders::{OFF_FRAG, RECT_VERT};
 use crate::surface::GfxError;
 
 pub const SRC_W: u32 = 240;
@@ -13,19 +13,12 @@ pub struct GamePass {
     prog: gl::types::GLuint,
     game: gl::types::GLuint,
     u_rect: gl::types::GLint,
-    u_bright: gl::types::GLint,
     u_uv: gl::types::GLint,
-    u_src: gl::types::GLint,
     u_target: gl::types::GLint,
-    u_mode: gl::types::GLint,
-    u_paper_size: gl::types::GLint,
-    u_origin: gl::types::GLint,
     origin: [f32; 2],
-    u_pic: gl::types::GLint,
     pic: [f32; 4],
     paper: gl::types::GLuint,
     paper_size: f32,
-    effect: ScreenEffect,
     power: f32,
     fills: bool,
     /// Pixels kept for the carousel footer. The picture scales in the space above them.
@@ -37,7 +30,7 @@ pub struct GamePass {
 
 impl GamePass {
     pub fn new() -> Result<Self, GfxError> {
-        let prog = crate::shaders::program(RECT_VERT, GAME_FRAG)?;
+        let prog = crate::shaders::program(RECT_VERT, OFF_FRAG)?;
         let game = crate::gl::texture(SRC_W, SRC_H, gl::NEAREST, gl::CLAMP_TO_EDGE, gl::BGRA, None);
         let paper = crate::gl::texture(
             1,
@@ -47,41 +40,25 @@ impl GamePass {
             crate::gl::gray_format(),
             Some(&[255]),
         );
-        let (u_rect, u_bright, u_uv, u_src, u_target, u_mode, u_paper_size, u_pic, u_origin);
+        let (u_rect, u_uv, u_target);
         unsafe {
             gl::UseProgram(prog);
             gl::Uniform1i(crate::gl::uniform_location(prog, "u_game"), 0);
-            u_src = crate::gl::uniform_location(prog, "u_src");
-            gl::Uniform2f(u_src, SRC_W as f32, SRC_H as f32);
             u_target = crate::gl::uniform_location(prog, "u_target");
             gl::Uniform2f(u_target, SRC_W as f32, SRC_H as f32);
             u_rect = crate::gl::uniform_location(prog, "u_rect");
-            u_bright = crate::gl::uniform_location(prog, "u_bright");
             u_uv = crate::gl::uniform_location(prog, "u_uv");
-            gl::Uniform1i(crate::gl::uniform_location(prog, "u_paper"), 1);
-            u_mode = crate::gl::uniform_location(prog, "u_mode");
-            u_paper_size = crate::gl::uniform_location(prog, "u_paper_size");
-            u_pic = crate::gl::uniform_location(prog, "u_pic");
-            u_origin = crate::gl::uniform_location(prog, "u_origin");
-            gl::Uniform2f(crate::gl::uniform_location(prog, "u_fbo"), 1.0, 1.0);
         }
         Ok(GamePass {
             prog,
             game,
             u_rect,
-            u_bright,
             u_uv,
-            u_src,
             u_target,
-            u_mode,
-            u_paper_size,
-            u_origin,
             origin: [0.0, 0.0],
-            u_pic,
             pic: WHOLE_TEXTURE,
             paper,
             paper_size: 1.0,
-            effect: ScreenEffect::Lcd3x,
             power: 1.0,
             fills: false,
             bottom: 0.0,
@@ -122,10 +99,6 @@ impl GamePass {
 
     pub fn set_origin(&mut self, x: f32, y: f32) {
         self.origin = [x, y];
-    }
-
-    pub fn set_effect(&mut self, effect: ScreenEffect) {
-        self.effect = effect;
     }
 
     pub fn set_paper(&mut self, size: u32, gray: &[u8]) {
@@ -187,8 +160,6 @@ impl GamePass {
             );
             unsafe {
                 gl::DeleteTextures(1, &self.game);
-                gl::UseProgram(self.prog);
-                gl::Uniform2f(self.u_src, width as f32, height as f32);
             }
             self.game = game;
             self.frame = size;
@@ -210,75 +181,51 @@ impl GamePass {
         }
     }
 
-    pub fn frame_size(&self) -> (u32, u32) {
-        self.frame
+    pub fn shader_frame(&self, output: (u32, u32)) -> ShaderFrame {
+        let (x, y, w, h) = self.frame();
+        ShaderFrame {
+            texture: self.frame,
+            output,
+            src: self.trimmed_source(),
+            rect: [x, y, w, h],
+            paper: self.paper,
+            paper_size: self.paper_size,
+            origin: self.origin,
+            pic: self.pic,
+        }
     }
 
     pub fn draw(&self, quad: &Quad) {
-        let src = match self.effect {
-            ScreenEffect::Grid => whole_scale_source(self.src, self.target),
-            _ => self.src,
-        };
-        self.draw_source(self.game, quad, src);
+        self.draw_source(self.game, quad);
     }
 
     pub fn draw_still(&self, tex: gl::types::GLuint, quad: &Quad) {
-        self.draw_source(tex, quad, self.src);
+        self.draw_source(tex, quad);
     }
 
-    fn draw_source(&self, tex: gl::types::GLuint, quad: &Quad, src: [f32; 4]) {
-        let (x, y, w, h) = self.frame();
-        let bright = if self.fills {
-            1.0
-        } else {
-            screen_brightness(self.power)
-        };
+    fn trimmed_source(&self) -> [f32; 4] {
+        let mut src = self.src;
         // The footer covers the bottom of a full-frame picture. Keep the part that sat above
         // it, so opening the scale does not squash the picture into the shorter rect.
-        let mut src = src;
         if self.bottom > 0.0 {
             src[3] *= (self.target[1] - self.bottom) / self.target[1];
         }
+        src
+    }
+
+    fn draw_source(&self, tex: gl::types::GLuint, quad: &Quad) {
+        let (x, y, w, h) = self.frame();
+        let src = self.trimmed_source();
         unsafe {
             gl::UseProgram(self.prog);
             gl::Uniform2f(self.u_target, self.target[0], self.target[1]);
             gl::Uniform4f(self.u_rect, x, y, w, h);
             gl::Uniform4f(self.u_uv, src[0], src[1], src[2], src[3]);
-            gl::Uniform1f(self.u_bright, bright);
-            gl::Uniform1f(self.u_mode, self.effect.mode());
-            gl::Uniform1f(self.u_paper_size, self.paper_size);
-            gl::Uniform2f(self.u_origin, self.origin[0], self.origin[1]);
-            gl::Uniform4f(
-                self.u_pic,
-                self.pic[0],
-                self.pic[1],
-                self.pic[2],
-                self.pic[3],
-            );
-            gl::ActiveTexture(gl::TEXTURE1);
-            gl::BindTexture(gl::TEXTURE_2D, self.paper);
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, tex);
         }
         quad.draw();
     }
-}
-
-fn whole_scale_source(src: [f32; 4], target: [f32; 2]) -> [f32; 4] {
-    let (x, w) = whole_scale(src[0], src[2], SRC_W as f32, target[0]);
-    let (y, h) = whole_scale(src[1], src[3], SRC_H as f32, target[1]);
-    [x, y, w, h]
-}
-
-fn whole_scale(at: f32, len: f32, texels: f32, out: f32) -> (f32, f32) {
-    let shown = len * texels;
-    let scale = (out / shown).ceil();
-    let trim = scale * shown - out;
-    if trim >= 0.1 * shown {
-        return (at, len);
-    }
-    let top = (trim / 2.0).floor();
-    (at + top / scale / texels, out / scale / texels)
 }
 
 impl Drop for GamePass {

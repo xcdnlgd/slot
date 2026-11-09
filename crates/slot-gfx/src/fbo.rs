@@ -154,7 +154,7 @@ impl Compositor {
     }
 
     pub fn draw_game(&mut self) {
-        self.with_game_rect(|c| c.game.draw(&c.quad));
+        self.with_game_rect(|c| c.draw_game_source());
     }
 
     pub fn draw_list(&mut self, items: &[Draw]) {
@@ -163,19 +163,13 @@ impl Compositor {
             match *item {
                 Draw::Game => {
                     self.sprites.draw(&items[from..i], &self.quad);
-                    self.with_game_rect(|c| {
-                        if c.external.is_some() {
-                            c.draw_external();
-                        } else {
-                            c.game.draw(&c.quad);
-                        }
-                    });
+                    self.with_game_rect(|c| c.draw_game_source());
                     self.draw_game_bezel();
                 }
                 Draw::Shot { tex } => {
                     self.sprites.draw(&items[from..i], &self.quad);
                     if let Some(tex) = self.sprites.source(tex) {
-                        self.with_game_rect(|c| c.game.draw_still(tex, &c.quad));
+                        self.with_game_rect(move |c| c.draw_still_source(tex));
                     }
                 }
                 Draw::Capture => {
@@ -222,10 +216,6 @@ impl Compositor {
         self.contrast = contrast_boost(step);
     }
 
-    pub fn set_screen_effect(&mut self, effect: crate::ScreenEffect) {
-        self.game.set_effect(effect);
-    }
-
     pub fn set_picture(&mut self, rect: [f32; 4]) {
         self.game.set_picture(rect);
     }
@@ -242,7 +232,7 @@ impl Compositor {
         self.game_offset = offset;
     }
 
-    pub fn set_external_source(&mut self, source: Option<ShaderSource>) -> Result<(), GfxError> {
+    pub fn set_shader_source(&mut self, source: Option<ShaderSource>) -> Result<(), GfxError> {
         self.external = match &source {
             Some(source) => Some(ExternalProgram::new(source)?),
             None => None,
@@ -525,20 +515,30 @@ impl Compositor {
         )
     }
 
-    fn draw_external(&mut self) {
+    fn draw_game_source(&mut self) {
+        if self.external.is_some() {
+            self.draw_shader_with(self.game.texture());
+        } else {
+            self.game.draw(&self.quad);
+        }
+    }
+
+    fn draw_still_source(&mut self, texture: gl::types::GLuint) {
+        if self.external.is_some() {
+            self.draw_shader_with(texture);
+        } else {
+            self.game.draw_still(texture, &self.quad);
+        }
+    }
+
+    fn draw_shader_with(&mut self, texture: gl::types::GLuint) {
         let (_, _, w, h) = self.game_rect_px();
+        let output = (w as u32, h as u32);
         self.game.set_linear(self.external_linear);
-        let bright = self.game.brightness();
-        let texture = self.game.texture();
         if let Some(program) = &self.external {
             unsafe { gl::Viewport(0, 0, w, h) };
-            program.draw(
-                texture,
-                self.game.frame_size(),
-                (w as u32, h as u32),
-                0,
-                bright,
-            );
+            let frame = self.game.shader_frame(output);
+            program.draw(texture, &frame, 0);
         }
         self.game.set_linear(false);
     }
@@ -607,6 +607,7 @@ impl Compositor {
         self.game.set_origin(0.0, 0.0);
         draw(self);
         let y = self.size.1 as i32 - top - h;
+        let bright = self.game.brightness();
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo);
             gl::Viewport(x, y, w, h);
@@ -614,7 +615,7 @@ impl Compositor {
             gl::UseProgram(self.blit);
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, self.game_tex);
-            gl::Uniform3f(self.u_gain, 1.0, 1.0, 1.0);
+            gl::Uniform3f(self.u_gain, bright, bright, bright);
             gl::Uniform1f(self.u_saturation, 0.0);
             gl::Uniform1f(self.u_contrast, 0.0);
             gl::Uniform4f(self.u_blit_uv, 0.0, 0.0, 1.0, 1.0);

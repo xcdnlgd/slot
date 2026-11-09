@@ -172,6 +172,11 @@ Do not rebase or force-push the fork branch.
 
 ## Shaders and bezels
 
+- Built-in shaders are ordinary files in `Shaders/Common`: `Grid`, `LCD3x`,
+  `Dot` and `Simpletex`. `Off` is the only value that needs no file.
+- A saved shader is a file stem, and `Shaders/<platform>` overrides a Common
+  file with the same stem. Missing built-in files are seeded from embedded
+  copies on boot and never overwrite user edits.
 - External shaders are scanned from `Shaders/Common`, `Shaders/GBA`,
   `Shaders/GB` and `Shaders/GBC`.
 - Only single-pass RetroArch GLSL/GLSLP presets are supported. Multi-pass

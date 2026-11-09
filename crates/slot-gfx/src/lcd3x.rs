@@ -9,22 +9,6 @@ pub fn lcd3x_factors(x: f32, y: f32) -> [f32; 3] {
     OFFSETS.map(|o| yfactor * (BRIGHTEN_LCD + (2.0 * PI * x + o).sin()) / (BRIGHTEN_LCD + 1.0))
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum ScreenEffect {
-    None,
-    Lcd3x,
-    Grid,
-    Dot,
-    Simpletex,
-    Shimmerless,
-}
-
-impl ScreenEffect {
-    pub fn mode(self) -> f32 {
-        self as u8 as f32
-    }
-}
-
 pub fn lcd3x_mask() -> [[[f32; 3]; 3]; 3] {
     let mut mask = [[[0.0f32; 3]; 3]; 3];
     for (oy, row) in mask.iter_mut().enumerate() {

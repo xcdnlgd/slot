@@ -89,6 +89,18 @@ fn rename_fragment_main(text: &str) -> String {
     format!("{head}{tail}")
 }
 
+#[derive(Clone, Copy)]
+pub struct ShaderFrame {
+    pub texture: (u32, u32),
+    pub output: (u32, u32),
+    pub src: [f32; 4],
+    pub rect: [f32; 4],
+    pub paper: gl::types::GLuint,
+    pub paper_size: f32,
+    pub origin: [f32; 2],
+    pub pic: [f32; 4],
+}
+
 pub struct ExternalProgram {
     prog: gl::types::GLuint,
     vao: gl::types::GLuint,
@@ -102,8 +114,14 @@ pub struct ExternalProgram {
     u_in_size: gl::types::GLint,
     u_frame_dir: gl::types::GLint,
     u_frame_count: gl::types::GLint,
-    u_bright: gl::types::GLint,
     u_texture: gl::types::GLint,
+    u_src: gl::types::GLint,
+    u_uv: gl::types::GLint,
+    u_rect: gl::types::GLint,
+    u_paper: gl::types::GLint,
+    u_paper_size: gl::types::GLint,
+    u_origin: gl::types::GLint,
+    u_pic: gl::types::GLint,
 }
 
 fn fragment_source(text: &str) -> String {
@@ -111,8 +129,8 @@ fn fragment_source(text: &str) -> String {
     format!(
         "#define FRAGMENT 1\n\
          #ifdef GL_ES\nprecision mediump float;\n#endif\n\
-         uniform float u_bright;\n{frag_text}\n\
-         void main() {{ slot_external_main(); FragColor.rgb *= u_bright; }}\n"
+         {frag_text}\n\
+         void main() {{ slot_external_main(); }}\n"
     )
 }
 
@@ -173,19 +191,18 @@ impl ExternalProgram {
             u_in_size: uniform(prog, "InputSize"),
             u_frame_dir: uniform(prog, "FrameDirection"),
             u_frame_count: uniform(prog, "FrameCount"),
-            u_bright: uniform(prog, "u_bright"),
             u_texture: uniform(prog, "Texture"),
+            u_src: uniform(prog, "u_src"),
+            u_uv: uniform(prog, "u_uv"),
+            u_rect: uniform(prog, "u_rect"),
+            u_paper: uniform(prog, "u_paper"),
+            u_paper_size: uniform(prog, "u_paper_size"),
+            u_origin: uniform(prog, "u_origin"),
+            u_pic: uniform(prog, "u_pic"),
         })
     }
 
-    pub fn draw(
-        &self,
-        texture: gl::types::GLuint,
-        input: (u32, u32),
-        output: (u32, u32),
-        frame: u64,
-        bright: f32,
-    ) {
+    pub fn draw(&self, texture: gl::types::GLuint, frame: &ShaderFrame, count: u64) {
         unsafe {
             gl::UseProgram(self.prog);
             if crate::gl::es() {
@@ -196,6 +213,9 @@ impl ExternalProgram {
             }
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, texture);
+            gl::ActiveTexture(gl::TEXTURE1);
+            gl::BindTexture(gl::TEXTURE_2D, frame.paper);
+            gl::ActiveTexture(gl::TEXTURE0);
             let mvp: [f32; 16] = [
                 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             ];
@@ -203,25 +223,69 @@ impl ExternalProgram {
                 gl::UniformMatrix4fv(self.u_mvp, 1, gl::FALSE, mvp.as_ptr());
             }
             if self.u_out >= 0 {
-                gl::Uniform2f(self.u_out, output.0 as f32, output.1 as f32);
+                gl::Uniform2f(self.u_out, frame.output.0 as f32, frame.output.1 as f32);
             }
             if self.u_tex_size >= 0 {
-                gl::Uniform2f(self.u_tex_size, input.0 as f32, input.1 as f32);
+                gl::Uniform2f(
+                    self.u_tex_size,
+                    frame.texture.0 as f32,
+                    frame.texture.1 as f32,
+                );
             }
             if self.u_in_size >= 0 {
-                gl::Uniform2f(self.u_in_size, input.0 as f32, input.1 as f32);
+                gl::Uniform2f(
+                    self.u_in_size,
+                    frame.texture.0 as f32,
+                    frame.texture.1 as f32,
+                );
             }
             if self.u_frame_dir >= 0 {
                 gl::Uniform1i(self.u_frame_dir, 1);
             }
             if self.u_frame_count >= 0 {
-                gl::Uniform1i(self.u_frame_count, frame as i32);
-            }
-            if self.u_bright >= 0 {
-                gl::Uniform1f(self.u_bright, bright);
+                gl::Uniform1i(self.u_frame_count, count as i32);
             }
             if self.u_texture >= 0 {
                 gl::Uniform1i(self.u_texture, 0);
+            }
+            if self.u_src >= 0 {
+                gl::Uniform2f(self.u_src, frame.texture.0 as f32, frame.texture.1 as f32);
+            }
+            if self.u_uv >= 0 {
+                gl::Uniform4f(
+                    self.u_uv,
+                    frame.src[0],
+                    frame.src[1],
+                    frame.src[2],
+                    frame.src[3],
+                );
+            }
+            if self.u_rect >= 0 {
+                gl::Uniform4f(
+                    self.u_rect,
+                    frame.rect[0],
+                    frame.rect[1],
+                    frame.rect[2],
+                    frame.rect[3],
+                );
+            }
+            if self.u_paper >= 0 {
+                gl::Uniform1i(self.u_paper, 1);
+            }
+            if self.u_paper_size >= 0 {
+                gl::Uniform1f(self.u_paper_size, frame.paper_size);
+            }
+            if self.u_origin >= 0 {
+                gl::Uniform2f(self.u_origin, frame.origin[0], frame.origin[1]);
+            }
+            if self.u_pic >= 0 {
+                gl::Uniform4f(
+                    self.u_pic,
+                    frame.pic[0],
+                    frame.pic[1],
+                    frame.pic[2],
+                    frame.pic[3],
+                );
             }
             gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
             if !crate::gl::es() {

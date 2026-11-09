@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use slot::thumb;
-use slot_gfx::{lcd3x_mask, Compositor, Draw, HeadlessSurface, PANEL_W, SRC_H, SRC_W};
+use slot_gfx::{lcd3x_mask, load_shader, Compositor, Draw, HeadlessSurface, PANEL_W, SRC_H, SRC_W};
 use slot_retro::{ButtonMask, MockCore, RetroCore};
 use slot_store::{Core, Platform, StateRing};
 use slot_ui::{photo_face, Polaroids, Printed};
@@ -14,7 +14,10 @@ static GL: Mutex<()> = Mutex::new(());
 fn compositor() -> Option<(MutexGuard<'static, ()>, HeadlessSurface, Compositor)> {
     let guard = GL.lock().unwrap_or_else(PoisonError::into_inner);
     let surface = HeadlessSurface::new().ok()?;
-    let compositor = Compositor::new(&surface).ok()?;
+    let mut compositor = Compositor::new(&surface).ok()?;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../card/Shaders/Common/LCD3x.glslp");
+    let source = load_shader(&path).ok()?;
+    compositor.set_shader_source(Some(source)).ok()?;
     Some((guard, surface, compositor))
 }
 

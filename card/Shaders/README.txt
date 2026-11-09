@@ -3,6 +3,10 @@ External shaders live in Common/, GBA/, GB/ or GBC/.
 Common/ is offered to every platform. GBA/, GB/ and GBC/ only appear for
 their own platform; GBC does not read GB/.
 
+Grid, LCD3x, Dot and Simpletex are ordinary presets in Common/. If one of
+those files is missing, slot writes it back from the copy built into the
+binary on the next boot. It never overwrites a file you have edited.
+
 Each entry is a RetroArch GLSL preset (.glslp) or a RetroArch vertex/fragment
 source (.glsl). slot currently loads single-pass presets only.
 

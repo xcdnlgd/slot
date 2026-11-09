@@ -3,8 +3,8 @@ mod common;
 use common::tmp_root;
 use slot_store::{
     atomic_write, read_slot_state, sweep_temps, write_slot_state, Appearance, BezelPick, Blending,
-    Core, GbPalette, Platform, Recent, Scale, Shader, ShelfMode, SlotState, WallpaperPick,
-    WallpaperTint, Zone, FF_SPEEDS, FF_SPEED_DEFAULT,
+    Core, GbPalette, Platform, Recent, Scale, ShelfMode, SlotState, WallpaperPick, WallpaperTint,
+    Zone, FF_SPEEDS, FF_SPEED_DEFAULT,
 };
 use tempfile::tempdir;
 
@@ -205,37 +205,42 @@ fn a_first_boot_rumbles_and_fast_forwards_silently_at_the_default() {
         !s.colour_correction_gb,
         "boots with the Game Boy picture tinted"
     );
-    assert_eq!(s.shader_gba, Shader::Grid);
-    assert_eq!(s.shader_gb, Shader::Simpletex);
+    assert_eq!(s.shader_gba.as_deref(), Some("Grid"));
+    assert_eq!(s.shader_gb.as_deref(), Some("Simpletex"));
 }
 
 #[test]
-fn external_shader_choices_survive_a_reload() {
+fn shader_choices_are_file_stems_that_survive_a_reload() {
     let d = tmp_root();
     let s = SlotState {
         cart: Some("Emerald".into()),
-        shader_gba: Shader::External,
-        shader_external_gba: Some("Common/linear.glslp".into()),
-        shader_gb: Shader::External,
-        shader_external_gb: Some("GB/pocket.glslp".into()),
-        shader_gbc: Shader::External,
-        shader_external_gbc: Some("GBC/colour.glslp".into()),
+        shader_gba: Some("linear".into()),
+        shader_gb: Some("pocket".into()),
+        shader_gbc: Some("colour".into()),
         ..SlotState::default()
     };
     write_slot_state(d.path(), &s).unwrap();
     let back = read_slot_state(d.path());
-    assert_eq!(back.shader_gba, Shader::External);
-    assert_eq!(back.shader_gb, Shader::External);
-    assert_eq!(back.shader_gbc, Shader::External);
-    assert_eq!(
-        back.shader_external_gba.as_deref(),
-        Some("Common/linear.glslp")
-    );
-    assert_eq!(back.shader_external_gb.as_deref(), Some("GB/pocket.glslp"));
-    assert_eq!(
-        back.shader_external_gbc.as_deref(),
-        Some("GBC/colour.glslp")
-    );
+    assert_eq!(back.shader_gba.as_deref(), Some("linear"));
+    assert_eq!(back.shader_gb.as_deref(), Some("pocket"));
+    assert_eq!(back.shader_gbc.as_deref(), Some("colour"));
+}
+
+#[test]
+fn an_old_external_preset_migrates_to_its_file_stem() {
+    let d = tmp_root();
+    std::fs::write(
+        d.path().join("Config/slot.state"),
+        "cart=Emerald\nbrightness=3\nblue_light=1\nvolume=40\nmuted=0\nclock_set=1\nutc_offset_min=0\n\
+         shader_gba=external\nshader_external_gba=Common/linear.glslp\n\
+         shader_gb=external\nshader_external_gb=GB/pocket.glslp\n\
+         shader_gbc=off\n",
+    )
+    .unwrap();
+    let s = read_slot_state(d.path());
+    assert_eq!(s.shader_gba.as_deref(), Some("linear"));
+    assert_eq!(s.shader_gb.as_deref(), Some("pocket"));
+    assert_eq!(s.shader_gbc, None);
 }
 
 #[test]
@@ -275,12 +280,9 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
             colour_correction_gba: false,
             colour_correction_gb: false,
             colour_correction_gbc: false,
-            shader_gba: Shader::Grid,
-            shader_gb: Shader::Simpletex,
-            shader_gbc: Shader::Simpletex,
-            shader_external_gba: None,
-            shader_external_gb: None,
-            shader_external_gbc: None,
+            shader_gba: Some("Grid".into()),
+            shader_gb: Some("Simpletex".into()),
+            shader_gbc: Some("Simpletex".into()),
             auto_load: true,
             eject_save: true,
             turbo: true,
@@ -326,8 +328,8 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         ff_sound: true,
         colour_correction_gba: true,
         colour_correction_gb: false,
-        shader_gba: Shader::Dot,
-        shader_gb: Shader::Off,
+        shader_gba: Some("Dot".into()),
+        shader_gb: None,
         auto_load: false,
         eject_save: false,
         turbo: false,
@@ -336,7 +338,7 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         gb_palette: GbPalette::parse("GBC Dark Green →A").unwrap(),
         wallpaper_tint: WallpaperTint::Medium,
         colour_correction_gbc: true,
-        shader_gbc: Shader::Shimmerless,
+        shader_gbc: Some("Simpletex".into()),
         saturation: 4,
         contrast: 7,
         bezel_gba: BezelPick::None,
@@ -360,7 +362,7 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         "ff_sound=1",
         "colour_correction_gba=1",
         "colour_correction_gb=0",
-        "shader_gba=dot",
+        "shader_gba=Dot",
         "shader_gb=off",
         "auto_load=0",
         "eject_save=0",
@@ -374,7 +376,7 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         "bezel_gb=default",
         "bezel_gbc=Pocket.png",
         "colour_correction_gbc=1",
-        "shader_gbc=shimmerless",
+        "shader_gbc=Simpletex",
         "saturation=4",
         "contrast=7",
         "blending_gba=ghosting",
@@ -655,10 +657,13 @@ fn a_card_from_before_the_gbc_split_starts_gbc_from_the_gb_c_settings() {
     )
     .unwrap();
     let s = read_slot_state(d.path());
-    assert_eq!((s.colour_correction_gb, s.shader_gb), (true, Shader::Grid));
     assert_eq!(
-        (s.colour_correction_gbc, s.shader_gbc),
-        (true, Shader::Grid)
+        (s.colour_correction_gb, s.shader_gb.as_deref()),
+        (true, Some("Grid"))
+    );
+    assert_eq!(
+        (s.colour_correction_gbc, s.shader_gbc.as_deref()),
+        (true, Some("Grid"))
     );
     std::fs::write(
         d.path().join("Config/slot.state"),
@@ -673,8 +678,8 @@ fn a_card_from_before_the_gbc_split_starts_gbc_from_the_gb_c_settings() {
     .unwrap();
     let s = read_slot_state(d.path());
     assert_eq!(
-        (s.colour_correction_gbc, s.shader_gbc),
-        (false, Shader::Off),
+        (s.colour_correction_gbc, s.shader_gbc.as_deref()),
+        (false, None),
         "the GB settings overrode GBC's own"
     );
 }

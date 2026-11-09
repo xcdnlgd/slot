@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use slot_gfx::{Compositor, Draw, ScreenEffect, TexId};
+use slot_gfx::{Compositor, Draw, TexId};
 
 const PAPER: &[u8] = include_bytes!("../assets/paper.png");
 use crate::shot_loader::{ShotLoader, Want};
@@ -1060,7 +1060,7 @@ impl Frontend {
         compositor.set_saturation(self.session.app().saturation());
         compositor.set_contrast(self.session.app().contrast());
         compositor.set_picture(self.session.app().picture_rect());
-        let external = self.session.app().external_shader_path();
+        let external = self.session.app().shader_path();
         if external != self.external_path {
             self.external_path = external.clone();
             let loaded = match external.as_deref() {
@@ -1073,20 +1073,11 @@ impl Frontend {
                 },
                 None => None,
             };
-            if let Err(error) = compositor.set_external_source(loaded) {
+            if let Err(error) = compositor.set_shader_source(loaded) {
                 eprintln!("slot: shader: {error}");
-                let _ = compositor.set_external_source(None);
+                let _ = compositor.set_shader_source(None);
             }
         }
-        compositor.set_screen_effect(match self.session.app().screen_shader() {
-            slot_store::Shader::Off => ScreenEffect::None,
-            slot_store::Shader::Lcd3x => ScreenEffect::Lcd3x,
-            slot_store::Shader::Grid => ScreenEffect::Grid,
-            slot_store::Shader::Dot => ScreenEffect::Dot,
-            slot_store::Shader::Simpletex => ScreenEffect::Simpletex,
-            slot_store::Shader::Shimmerless => ScreenEffect::Shimmerless,
-            slot_store::Shader::External => ScreenEffect::None,
-        });
         compositor.set_shake(self.session.app().screen_shake());
         compositor.set_screen_power(self.session.app().screen_power());
         compositor.set_screen_footer(self.session.app().screen_footer());

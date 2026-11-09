@@ -2,9 +2,10 @@
 
 use slot_gfx::{
     blue_light_gain, canvas_size, contrast_boost, dim_gain, game_size, lcd3x_factors, lcd3x_mask,
-    saturation_boost, Compositor, Draw, GameSize, HeadlessSurface, ScreenEffect, Sizing, OUT_H,
+    load_shader, saturation_boost, Compositor, Draw, GameSize, HeadlessSurface, Sizing, OUT_H,
     OUT_W, SRC_H, SRC_W,
 };
+use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 static GL: Mutex<()> = Mutex::new(());
@@ -32,8 +33,21 @@ fn adopt(c: &mut Compositor, place: Place) {
 fn compositor() -> Option<(MutexGuard<'static, ()>, HeadlessSurface, Compositor)> {
     let guard = GL.lock().unwrap_or_else(PoisonError::into_inner);
     let surface = HeadlessSurface::new().ok()?;
-    let compositor = Compositor::new(&surface).ok()?;
+    let mut compositor = Compositor::new(&surface).ok()?;
+    set_shader(&mut compositor, Some("LCD3x"));
     Some((guard, surface, compositor))
+}
+
+fn builtin(name: &str) -> slot_gfx::ShaderSource {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../card/Shaders/Common")
+        .join(format!("{name}.glslp"));
+    load_shader(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn set_shader(c: &mut Compositor, name: Option<&str>) {
+    let source = name.map(builtin);
+    c.set_shader_source(source).expect("the shader compiles");
 }
 
 fn px(frame: &[u8], x: usize, y: usize) -> [u8; 3] {
@@ -276,7 +290,7 @@ fn a_still_is_drawn_like_the_live_picture() {
         p[3] = 255;
     }
     let tex = c.create_texture_nearest(SRC_W, SRC_H, &rgba);
-    c.set_screen_effect(ScreenEffect::None);
+    set_shader(&mut c, None);
     c.set_screen_power(1.0);
     for (window, layout, rect) in [
         (
@@ -608,7 +622,7 @@ fn the_mask_follows_the_game_pixels_in_both_modes() {
 
 fn grid_frame(c: &mut Compositor, window: (u32, u32)) -> (Vec<u8>, usize, usize) {
     c.fit(window);
-    c.set_screen_effect(ScreenEffect::Grid);
+    set_shader(c, Some("Grid"));
     c.set_screen_power(1.0);
     c.begin_frame();
     c.upload_game(&flat_shot([0xc0, 0xc0, 0xc0]));
@@ -740,7 +754,7 @@ fn stretched_gb_grid(c: &mut Compositor, window: (u32, u32)) -> (Vec<u8>, usize,
     ]);
     c.set_game_source_rect(GB_RECT);
     c.fit(window);
-    c.set_screen_effect(ScreenEffect::Grid);
+    set_shader(c, Some("Grid"));
     c.set_screen_power(1.0);
     c.begin_frame();
     c.upload_game(&gb_shaped(|_, _| [0xc0, 0xc0, 0xc0], [0, 0, 0]));
@@ -783,7 +797,7 @@ fn simpletex_shows_a_grey_paper_as_grey() {
     };
     c.set_paper(4, &[0x60; 16]);
     c.fit((OUT_W, OUT_H));
-    c.set_screen_effect(ScreenEffect::Simpletex);
+    set_shader(&mut c, Some("Simpletex"));
     c.set_screen_power(1.0);
     c.begin_frame();
     c.upload_game(&flat_shot([0xff, 0xff, 0xff]));
@@ -795,110 +809,10 @@ fn simpletex_shows_a_grey_paper_as_grey() {
     );
 }
 
-fn every_fourth_column_lit() -> Vec<u8> {
-    let mut buf = Vec::with_capacity((SRC_W * SRC_H * 4) as usize);
-    for _ in 0..SRC_H {
-        for x in 0..SRC_W {
-            let v = if x % 4 == 0 { 255 } else { 0 };
-            buf.extend_from_slice(&[v, v, v, 0]);
-        }
-    }
-    buf
-}
-
-fn column_widths(c: &mut Compositor, effect: ScreenEffect) -> Vec<f32> {
-    c.fit((640, 480));
-    c.set_game_source_rect(WHOLE);
-    c.set_screen_effect(effect);
-    c.set_screen_power(1.0);
-    c.begin_frame();
-    c.upload_game(&every_fourth_column_lit());
-    c.draw_game();
-    let (w, h) = c.frame_size();
-    let frame = c.read_frame();
-    let row = h as usize / 2;
-    let lit = |x: usize| frame[(row * w as usize + x) * 4 + 1] as f32 / 255.0;
-    let span = w as f32 / SRC_W as f32;
-    (4..SRC_W as usize - 4)
-        .step_by(4)
-        .map(|k| {
-            let from = ((k - 1) as f32 * span) as usize;
-            let to = ((k + 2) as f32 * span).ceil() as usize;
-            (from..to).map(lit).sum()
-        })
-        .collect()
-}
-
-#[test]
-fn shimmerless_gives_every_game_column_the_same_width_on_a_4_by_3_panel() {
-    let Some((_g, _s, mut c)) = compositor() else {
-        return;
-    };
-    let spread = |widths: &[f32]| {
-        let (lo, hi) = widths
-            .iter()
-            .fold((f32::MAX, f32::MIN), |(lo, hi), w| (lo.min(*w), hi.max(*w)));
-        hi - lo
-    };
-    let sharp = column_widths(&mut c, ScreenEffect::None);
-    assert!(
-        spread(&sharp) > 0.9,
-        "plain columns were already even: {sharp:?}"
-    );
-    let even = column_widths(&mut c, ScreenEffect::Shimmerless);
-    assert!(spread(&even) < 0.03, "shimmerless columns: {even:?}");
-    let want = 640.0 / SRC_W as f32;
-    assert!(
-        even.iter().all(|w| (w - want).abs() < 0.03),
-        "each column should cover {want} pixels: {even:?}"
-    );
-}
-
-#[test]
-fn shimmerless_never_blends_the_margin_into_the_picture() {
-    let Some((_g, _s, mut c)) = compositor() else {
-        return;
-    };
-    let inside = [0x40, 0x80, 0xc0];
-    let margin = [255, 0, 255];
-    adopt(&mut c, place((640, 480), (160, 144), Sizing::Fit));
-    c.fit((640, 480));
-    c.set_picture([
-        GB_RECT[0],
-        GB_RECT[1],
-        GB_RECT[0] + GB_RECT[2],
-        GB_RECT[1] + GB_RECT[3],
-    ]);
-    c.set_screen_effect(ScreenEffect::Shimmerless);
-    c.set_screen_power(1.0);
-    for drift in [0.0f32, 0.15, 0.4] {
-        c.set_game_source_rect([
-            GB_RECT[0] + drift / SRC_W as f32,
-            GB_RECT[1] + drift / SRC_H as f32,
-            GB_RECT[2],
-            GB_RECT[3],
-        ]);
-        c.begin_frame();
-        c.upload_game(&gb_shaped(|_, _| inside, margin));
-        c.draw_game();
-        let frame = c.read_frame();
-        let near = |p: [u8; 3], w: [u8; 3]| p.iter().zip(w).all(|(g, w)| g.abs_diff(w) <= 1);
-        for y in 0..480 {
-            for x in 53..53 + 533 {
-                let got = at(&frame, 640, x, y);
-                assert!(
-                    near(got, inside) || near(got, margin),
-                    "drift {drift}: ({x}, {y}) is a blend, {got:?}"
-                );
-            }
-        }
-    }
-}
-
 fn graded(c: &mut Compositor, rgb: [u8; 3], saturation: u8, contrast: u8) -> [u8; 3] {
     c.fit((OUT_W, OUT_H));
     c.set_game_source_rect(WHOLE);
-    c.set_screen_effect(ScreenEffect::None);
+    set_shader(c, None);
     c.set_screen_power(1.0);
     c.set_saturation(saturation);
     c.set_contrast(contrast);
@@ -1017,7 +931,7 @@ fn the_dot_shader_keeps_a_white_screen_a_little_over_half_lit() {
         return;
     };
     c.fit((OUT_W, OUT_H));
-    c.set_screen_effect(ScreenEffect::Dot);
+    set_shader(&mut c, Some("Dot"));
     c.set_screen_power(1.0);
     c.begin_frame();
     c.upload_game(&flat_shot([0xff, 0xff, 0xff]));
@@ -1047,7 +961,7 @@ fn at(frame: &[u8], w: u32, x: usize, y: usize) -> [u8; 3] {
 fn laid_out(c: &mut Compositor, window: (u32, u32), layout: Place, power: f32) -> Vec<u8> {
     c.fit(window);
     c.set_game_source_rect(GB_RECT);
-    c.set_screen_effect(ScreenEffect::None);
+    set_shader(c, None);
     adopt(&mut c, layout);
     c.set_screen_power(power);
     c.begin_frame();
@@ -1165,7 +1079,7 @@ fn fractional_fit_grid_lines_every_original_game_boy_pixel_evenly() {
         adopt(&mut c, place(panel, (160, 144), Sizing::Fit));
         c.fit(panel);
         c.set_game_source_rect(GB_RECT);
-        c.set_screen_effect(ScreenEffect::Grid);
+        set_shader(&mut c, Some("Grid"));
         c.set_screen_power(1.0);
         c.begin_frame();
         c.upload_game(&gb_shaped(|_, _| [0xc0; 3], [0, 0, 0]));

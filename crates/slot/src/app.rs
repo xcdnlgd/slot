@@ -8,8 +8,8 @@ use slot_power::{Battery, Charge, LedState, LidPolicy, Power, RepairResult};
 use slot_retro::LinkChannel;
 use slot_store::{
     format_stamp, parse_stamp, read_slot_state, scan, write_slot_state, BezelPick, Blending, Cart,
-    Collection, Core, GbColors, Platform, Recent, Scale, Shader, ShelfMode, ShotDir, ShotEntry,
-    SlotState, StateEntry, StateRing, WallpaperPick, WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX,
+    Collection, Core, GbColors, Platform, Recent, Scale, ShelfMode, ShotDir, ShotEntry, SlotState,
+    StateEntry, StateRing, WallpaperPick, WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX,
     CONTRAST_MAX, DIM_MAX, FF_SPEEDS, RING_MAX, SATURATION_MAX, SUNLIGHT_MAX, VOLUME_MAX,
 };
 use slot_ui::{
@@ -2653,9 +2653,15 @@ impl App {
             QuickRow::GbcColourCorrection => {
                 Some(QuickValue::flag(self.state.colour_correction_gbc))
             }
-            QuickRow::GbaShader => Some(shader_value(self.gba_shader())),
-            QuickRow::GbShader => Some(shader_value(self.state.shader_gb)),
-            QuickRow::GbcShader => Some(shader_value(self.state.shader_gbc)),
+            QuickRow::GbaShader => Some(shader_value(
+                self.shader_choice_for(Platform::Gba).is_some(),
+            )),
+            QuickRow::GbShader => {
+                Some(shader_value(self.shader_choice_for(Platform::Gb).is_some()))
+            }
+            QuickRow::GbcShader => Some(shader_value(
+                self.shader_choice_for(Platform::Gbc).is_some(),
+            )),
             QuickRow::Rumble => Some(QuickValue::flag(self.state.rumble)),
             QuickRow::LeftStick => Some(QuickValue::flag(self.state.left_stick_dpad)),
             QuickRow::AutoLoad => Some(QuickValue::flag(self.state.auto_load)),
@@ -2793,27 +2799,13 @@ impl App {
                 .find(|(candidate, _)| candidate == key)
                 .map(|(_, pair)| *pair)
         };
-        for (row, shader, key) in [
-            (
-                QuickRow::GbaShader,
-                self.state.shader_gba,
-                self.state.shader_external_gba.as_deref(),
-            ),
-            (
-                QuickRow::GbShader,
-                self.state.shader_gb,
-                self.state.shader_external_gb.as_deref(),
-            ),
-            (
-                QuickRow::GbcShader,
-                self.state.shader_gbc,
-                self.state.shader_external_gbc.as_deref(),
-            ),
+        for (row, platform) in [
+            (QuickRow::GbaShader, Platform::Gba),
+            (QuickRow::GbShader, Platform::Gb),
+            (QuickRow::GbcShader, Platform::Gbc),
         ] {
-            if shader == Shader::External {
-                if let Some(key) = key {
-                    values[row.index()] = face(key);
-                }
+            if let Some(choice) = self.shader_choice_for(platform) {
+                values[row.index()] = face(&choice.key);
             }
         }
         let playing = self.playing_row(QuickRow::Shader);
@@ -4126,44 +4118,28 @@ impl App {
         self.state.ff_sound
     }
 
-    fn gba_shaders(&self) -> &'static [Shader] {
-        let (w, h) = self.panel;
-        if w > 0 && w * 2 == h * 3 {
-            &Shader::GBA_3_2
-        } else {
-            &Shader::GBA
+    fn stored_shader(&self, platform: Platform) -> Option<&str> {
+        match platform {
+            Platform::Gba | Platform::Gbav => self.state.shader_gba.as_deref(),
+            Platform::Gb => self.state.shader_gb.as_deref(),
+            Platform::Gbc => self.state.shader_gbc.as_deref(),
         }
     }
 
-    fn gba_shader(&self) -> Shader {
-        if self.state.shader_gba == Shader::External {
-            return Shader::External;
-        }
-        match self.gba_shaders().contains(&self.state.shader_gba) {
-            true => self.state.shader_gba,
-            false => Shader::Off,
-        }
+    fn shader_choice_for(&self, platform: Platform) -> Option<slot_store::ExternalShader> {
+        let name = self.stored_shader(platform)?;
+        let root = self.root.as_deref()?;
+        slot_store::resolve_shader(root, platform.hardware(), name)
     }
 
-    pub fn screen_shader(&self) -> Shader {
-        match self.playing_platform() {
-            Platform::Gba | Platform::Gbav => self.gba_shader(),
-            Platform::Gb => self.state.shader_gb,
-            Platform::Gbc => self.state.shader_gbc,
-        }
+    pub fn shader_path(&self) -> Option<PathBuf> {
+        self.shader_choice_for(self.playing_platform())
+            .map(|shader| shader.path)
     }
 
-    pub fn external_shader_path(&self) -> Option<PathBuf> {
-        if self.screen_shader() != Shader::External {
-            return None;
-        }
-        let key = match self.playing_platform() {
-            Platform::Gba | Platform::Gbav => self.state.shader_external_gba.as_deref(),
-            Platform::Gb => self.state.shader_external_gb.as_deref(),
-            Platform::Gbc => self.state.shader_external_gbc.as_deref(),
-        }?;
-        let path = self.root.as_ref()?.join("Shaders").join(key);
-        path.is_file().then_some(path)
+    pub fn screen_shader(&self) -> Option<String> {
+        self.shader_choice_for(self.playing_platform())
+            .map(|shader| shader.name)
     }
 
     pub fn colour_correction(&self) -> bool {
@@ -5092,9 +5068,9 @@ impl App {
             self.persist();
             return;
         }
-        let gba_shaders = self.gba_shaders();
         let s = &mut self.state;
         match row {
+            QuickRow::GbaShader | QuickRow::GbShader | QuickRow::GbcShader => return,
             QuickRow::FastForward => {
                 let to = ff_next(s.ff_speed, right);
                 if to == s.ff_speed {
@@ -5114,27 +5090,6 @@ impl App {
             QuickRow::GbcColourCorrection => {
                 s.colour_correction_gbc = !s.colour_correction_gbc;
                 self.colour_pending = Some(self.colour_correction());
-            }
-            QuickRow::GbaShader => {
-                let to = s.shader_gba.step(gba_shaders, right);
-                if to == s.shader_gba {
-                    return;
-                }
-                s.shader_gba = to;
-            }
-            QuickRow::GbShader => {
-                let to = s.shader_gb.step(&Shader::GB, right);
-                if to == s.shader_gb {
-                    return;
-                }
-                s.shader_gb = to;
-            }
-            QuickRow::GbcShader => {
-                let to = s.shader_gbc.step(&Shader::GB, right);
-                if to == s.shader_gbc {
-                    return;
-                }
-                s.shader_gbc = to;
             }
             QuickRow::Rumble => s.rumble = !s.rumble,
             QuickRow::LeftStick => s.left_stick_dpad = !s.left_stick_dpad,
@@ -5283,87 +5238,53 @@ impl App {
             QuickRow::GbShader => Platform::Gb,
             QuickRow::GbcShader => Platform::Gbc,
             _ => self.playing_platform(),
-        };
-        let builtins: &[Shader] = match platform {
-            Platform::Gba | Platform::Gbav => self.gba_shaders(),
-            Platform::Gb | Platform::Gbc => &Shader::GB,
-        };
-        let current = match platform {
-            Platform::Gba | Platform::Gbav => self.state.shader_gba,
-            Platform::Gb => self.state.shader_gb,
-            Platform::Gbc => self.state.shader_gbc,
-        };
-        let current_key = match platform {
-            Platform::Gba | Platform::Gbav => self.state.shader_external_gba.clone(),
-            Platform::Gb => self.state.shader_external_gb.clone(),
-            Platform::Gbc => self.state.shader_external_gbc.clone(),
-        };
-        let mut choices: Vec<(Shader, Option<String>)> =
-            builtins.iter().map(|s| (*s, None)).collect();
-        if let Some(root) = self.root.as_deref() {
-            let shader_platform = match platform {
-                Platform::Gbav => Platform::Gba,
-                other => other,
-            };
-            choices.extend(
-                slot_store::external_shaders(root, shader_platform)
-                    .into_iter()
-                    .map(|s| (Shader::External, Some(s.key))),
-            );
         }
-        let at = if current == Shader::External {
-            choices
-                .iter()
-                .position(|(s, key)| *s == Shader::External && *key == current_key)
-                .or_else(|| choices.iter().position(|(s, _)| *s == Shader::External))
-                .unwrap_or(0)
-        } else {
-            choices
-                .iter()
-                .position(|(s, key)| *s == current && key.is_none())
-                .unwrap_or(0)
+        .hardware();
+        let Some(root) = self.root.as_deref() else {
+            return;
         };
-        let n = choices.len();
-        let (to, key) = choices[if right {
+        let catalog = slot_store::external_shaders(root, platform);
+        let current = match platform {
+            Platform::Gba => self.state.shader_gba.as_deref(),
+            Platform::Gb => self.state.shader_gb.as_deref(),
+            Platform::Gbc => self.state.shader_gbc.as_deref(),
+            Platform::Gbav => self.state.shader_gba.as_deref(),
+        };
+        // Off is the first choice; the rest are the shader files in menu order.
+        let at = current
+            .and_then(|name| {
+                catalog
+                    .iter()
+                    .position(|s| s.name.eq_ignore_ascii_case(name))
+                    .map(|i| i + 1)
+            })
+            .unwrap_or(0);
+        let n = catalog.len() + 1;
+        let next = if right {
             (at + 1) % n
         } else {
             (at + n - 1) % n
-        }]
-        .clone();
-        let named = if to == Shader::External {
-            key.as_deref().and_then(|key| {
-                self.quick_menu_faces
-                    .as_ref()?
-                    .external_toasts
-                    .iter()
-                    .find_map(|(candidate, face)| (candidate == key).then_some(*face))
-            })
-        } else {
-            None
+        };
+        let choice = next.checked_sub(1).map(|i| &catalog[i]);
+        let name = choice.map(|s| s.name.clone());
+        let key = choice.map(|s| s.key.clone());
+        let said = match choice {
+            Some(_) => Toast::Shader,
+            None => Toast::ShaderOff,
         };
         match platform {
-            Platform::Gba | Platform::Gbav => {
-                self.state.shader_gba = to;
-                self.state.shader_external_gba = key;
-            }
-            Platform::Gb => {
-                self.state.shader_gb = to;
-                self.state.shader_external_gb = key;
-            }
-            Platform::Gbc => {
-                self.state.shader_gbc = to;
-                self.state.shader_external_gbc = key;
-            }
+            Platform::Gba => self.state.shader_gba = name,
+            Platform::Gb => self.state.shader_gb = name,
+            Platform::Gbc => self.state.shader_gbc = name,
+            Platform::Gbav => self.state.shader_gba = name,
         }
-        let said = match to {
-            Shader::Off => Toast::ShaderOff,
-            Shader::Lcd3x => Toast::ShaderLcd3x,
-            Shader::Grid => Toast::ShaderGrid,
-            Shader::Dot => Toast::ShaderDot,
-            Shader::Simpletex => Toast::ShaderSimpletex,
-            Shader::Shimmerless => Toast::ShaderShimmerless,
-            Shader::External => Toast::ShaderExternal,
-        };
+        let named = key.as_deref().and_then(|key| {
+            self.quick_menu_faces
+                .as_ref()?
+                .external_toasts
+                .iter()
+                .find_map(|(candidate, face)| (candidate == key).then_some(*face))
+        });
         self.persist();
         match named {
             Some((tex, w, h)) => self.hud.toast_named(said, tex, w, h, self.now()),
@@ -13459,15 +13380,11 @@ fn scale_value(scale: Scale) -> QuickValue {
     }
 }
 
-fn shader_value(shader: Shader) -> QuickValue {
-    match shader {
-        Shader::Off => QuickValue::Off,
-        Shader::Lcd3x => QuickValue::Lcd3x,
-        Shader::Grid => QuickValue::Grid,
-        Shader::Dot => QuickValue::Dot,
-        Shader::Simpletex => QuickValue::Simpletex,
-        Shader::Shimmerless => QuickValue::Shimmerless,
-        Shader::External => QuickValue::External,
+fn shader_value(named: bool) -> QuickValue {
+    if named {
+        QuickValue::Named
+    } else {
+        QuickValue::Off
     }
 }
 

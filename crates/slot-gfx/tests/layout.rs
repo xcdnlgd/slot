@@ -1,6 +1,6 @@
 #![cfg(target_os = "macos")]
 
-use slot_gfx::{Canvas, Compositor, Draw, HeadlessSurface, ScreenEffect};
+use slot_gfx::{Canvas, Compositor, Draw, HeadlessSurface};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 static GL: Mutex<()> = Mutex::new(());
