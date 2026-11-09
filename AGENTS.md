@@ -6,14 +6,17 @@ and stable. Put temporary task state in a handoff, not here.
 ## Build and test
 
 ```sh
-cargo check -p slot
-cargo test -p slot --tests
+cargo check --workspace --all-targets
+cargo nextest run -p slot
 go-task test
 ```
 
-The full test suite includes machine-specific tests that may skip when a
-vendored core, cart or display is unavailable. Prefer targeted tests while
-iterating, then run the full suite before declaring a change complete.
+Use `cargo check --workspace --all-targets` for compile-only checks. Use
+nextest or `go-task test` to run tests; do not run `cargo test --workspace`
+in parallel, because a few tests share process-wide indexes. The full suite
+includes machine-specific tests that may skip when a vendored core, cart or
+display is unavailable. Prefer targeted tests while iterating, then run the
+full suite before declaring a change complete.
 
 Release builds:
 
@@ -80,30 +83,35 @@ go-task fsck:exfat
 Keep these layers distinct:
 
 ```text
-GameFrame  native core output
-GameRect   game picture rectangle / shader output
-Panel      device screen resolution
-Window     host window (host only)
+GameFrame   native core output
+GameSize    width and height chosen by Integer / Fit / Fill
+GameOffset  x and y chosen by the panel or a bezel's transparent hole
+GameRect    GameSize + GameOffset, in panel pixels
+Panel       device screen resolution
+Window      host window (host only)
 ```
 
 - `GameFrame` is the real core resolution: GBA `240x160`, GB/GBC `160x144`.
+- `GameSize` only answers how wide and tall the picture is. It never decides
+  its position.
+- `GameOffset` is the single place that decides x/y: centre of the panel, or
+  centre of a panel-sized bezel's transparent hole.
+- `GameRect` is `GameSize` at `GameOffset`, and its FBO is exactly that size.
+  It is composited into `Panel` one-to-one at integer pixel coordinates.
 - The game shader renders into `GameRect`, never directly into the final
   panel when adding a rendering feature.
-- `GameRect` is composited into `Panel` one-to-one at integer pixel
-  coordinates.
 - UI and bezels are drawn at `Panel` resolution, after the game.
-- Host mode renders a simulated `Panel` (`SLOT_PANEL`) and scales the whole
-  panel to `SLOT_WINDOW` at the end.
+- `Canvas` is also panel pixels. Do not introduce a separate logical layout
+  resolution or convert game rectangles through one.
 - `GameRect` modes are `Integer`, `Fit` and `Fill`.
   - `Integer`: largest whole multiple, no stretch.
   - `Fit`: preserve aspect ratio, no crop.
   - `Fill`: stretch to the full panel.
-- `Fill` does not draw a game bezel.
-
-`Canvas`, `GameLayout` and `GameRect` are all in panel pixels. Do not
-introduce a separate logical layout resolution or convert game rectangles
-through one. The only `720x480` default is the simulated host panel used when
-`SLOT_PANEL` is absent; it is a panel choice, not a layout coordinate.
+- `Fill` has no offset and does not draw a game bezel.
+- There is no 3:2 band, `GameLayout`, SpFrame or SP strip. AGS-102 is an
+  ordinary panel-sized bezel overlay loaded from `System/bezels`.
+- The only `720x480` default is the simulated host panel used when
+  `SLOT_PANEL` is absent; it is a panel choice, not a layout coordinate.
 
 ## Shaders and bezels
 
@@ -116,6 +124,12 @@ through one. The only `720x480` default is the simulated host panel used when
   with nearest sampling.
 - Game bezels are full-screen panel-sized images with a transparent game
   area. Do not draw a bezel stretched into `GameRect`.
+- The transparent hole is measured in panel pixels and only feeds
+  `GameOffset`; it must not become part of `GameSize`.
+- AGS-102 is a normal panel overlay from `System/bezels`, not a separate
+  strip or animation path.
+- Scale-suffixed bezels are `_integer` and `_fit`. `_spscreen` is no longer
+  recognized.
 - Add bundled shader assets under `card/Shaders`; `sdcard`, `dist` and
   `dist:device` copy that tree.
 
