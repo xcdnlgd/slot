@@ -118,6 +118,24 @@ fn on_updates() -> (TempDir, App, FakeJobs) {
     (d, a, jobs)
 }
 
+#[test]
+fn a_fork_build_hides_the_upstream_updater() {
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            clock_set: true,
+            ..SlotState::default()
+        },
+    )
+    .unwrap();
+    let (mut a, _clock) = app_booting_at(d.path(), CLOCK_IS_SET);
+    a.set_updates_enabled(false);
+    assert!(a.hidden_rows().contains(&QuickRow::CheckUpdates));
+    a.set_updates_enabled(true);
+    assert!(!a.hidden_rows().contains(&QuickRow::CheckUpdates));
+}
+
 fn on_updates_row(a: &App) -> bool {
     !a.update_shown() && a.quick_menu() == Some(QuickRow::CheckUpdates)
 }

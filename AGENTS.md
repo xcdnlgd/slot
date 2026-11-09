@@ -113,6 +113,16 @@ Window      host window (host only)
 - The only `720x480` default is the simulated host panel used when
   `SLOT_PANEL` is absent; it is a panel choice, not a layout coordinate.
 
+## Updates
+
+- Shipped fork builds must not check the upstream slot update channel.
+  `Check for Updates` is hidden and the worker is not started unless
+  `SLOT_UPDATES` is set in the environment.
+- `SLOT_UPDATES=1` is a manual debugging override only; it still points at
+  the upstream `versions.json` and release assets.
+- Do not make the upstream URL configurable by silently falling back to it.
+  A fork release channel needs its own explicit URL and version scheme.
+
 ## Shaders and bezels
 
 - External shaders are scanned from `Shaders/Common`, `Shaders/GBA`,

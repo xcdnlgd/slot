@@ -536,9 +536,13 @@ impl Frontend {
         save_headers_when_changed(platform.root().to_path_buf());
         let lid_root = platform.root().to_path_buf();
         let mut session = Session::boot_with(platform.root().to_path_buf(), sink);
-        session
-            .app_mut()
-            .set_update_jobs(crate::update::update_jobs(platform.root().to_path_buf()));
+        let updates = crate::update::enabled();
+        session.app_mut().set_updates_enabled(updates);
+        if updates {
+            session
+                .app_mut()
+                .set_update_jobs(crate::update::update_jobs(platform.root().to_path_buf()));
+        }
         session
             .app_mut()
             .set_art_jobs(crate::art::jobs::art_jobs(platform.root().to_path_buf()));
@@ -1330,6 +1334,7 @@ impl Frontend {
     }
 
     pub fn set_update_jobs(&mut self, jobs: Box<dyn crate::update::UpdateJobs>) {
+        self.session.app_mut().set_updates_enabled(true);
         self.session.app_mut().set_update_jobs(jobs);
     }
 

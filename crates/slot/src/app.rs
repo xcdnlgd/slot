@@ -773,6 +773,7 @@ pub struct App {
     fetch_text: Vec<(TexId, u32, u32)>,
     fetch_paper: Option<TexId>,
     update: Option<UpdateState>,
+    updates_enabled: bool,
     update_busy: bool,
     update_at: Millis,
     update_sounded: bool,
@@ -993,6 +994,7 @@ impl App {
             fetch_text: Vec::new(),
             fetch_paper: None,
             update: None,
+            updates_enabled: true,
             update_busy: false,
             update_at: 0,
             update_sounded: false,
@@ -3160,6 +3162,9 @@ impl App {
             WallpaperPick::File(_) | WallpaperPick::Random | WallpaperPick::Shelf
         );
         let mut hidden = Vec::new();
+        if !self.updates_enabled {
+            hidden.push(QuickRow::CheckUpdates);
+        }
         if !own {
             hidden.push(QuickRow::WallpaperTint);
         }
@@ -8846,6 +8851,10 @@ impl App {
         self.update_jobs = jobs;
     }
 
+    pub fn set_updates_enabled(&mut self, on: bool) {
+        self.updates_enabled = on;
+    }
+
     pub fn studio(&self) -> Option<&crate::studio::Studio> {
         self.studio.as_ref()
     }
@@ -10967,7 +10976,7 @@ impl App {
     }
 
     fn open_check_for_updates(&mut self) {
-        if self.update_offered() {
+        if self.updates_enabled && self.update_offered() {
             self.check_for_update();
         }
     }

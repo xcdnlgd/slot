@@ -276,6 +276,12 @@ impl<R: Read> Read for Stoppable<R> {
     }
 }
 
+/// The upstream updater is opt-in for fork builds. Set this in the
+/// environment only when you deliberately want to test the upstream channel.
+pub fn enabled() -> bool {
+    std::env::var_os("SLOT_UPDATES").is_some()
+}
+
 pub const WIFI_CONF: &str = "Config/wifi.conf";
 pub const LATEST: &str = "https://slot-cfw.fyi/versions.json";
 const RELEASES: &str = "https://github.com/slot-cfw/slot/releases/download";
